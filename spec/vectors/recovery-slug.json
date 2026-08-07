@@ -1,0 +1,102 @@
+{
+  "$generated": "GENERATED FILE - do not edit by hand. Inputs live in spec/cases.ts; run `npm run spec:vectors` to regenerate.",
+  "$contract": "spec/CONTRACT.md",
+  "specVersion": "1.0.0",
+  "cases": [
+    {
+      "id": "slug/basic",
+      "requirement": "INJECT-005",
+      "op": "recoverySlug",
+      "input": {
+        "method": "GET",
+        "path": "/car/{id}"
+      },
+      "expected": "get-car-id"
+    },
+    {
+      "id": "slug/colon-style",
+      "requirement": "INJECT-005",
+      "op": "recoverySlug",
+      "input": {
+        "method": "GET",
+        "path": "/car/:id"
+      },
+      "expected": "get-car-id"
+    },
+    {
+      "id": "slug/nested",
+      "requirement": "INJECT-005",
+      "op": "recoverySlug",
+      "input": {
+        "method": "DELETE",
+        "path": "/user/{id}/posts/{postId}"
+      },
+      "expected": "delete-user-id-posts-postId"
+    },
+    {
+      "id": "slug/root",
+      "requirement": "INJECT-005",
+      "op": "recoverySlug",
+      "input": {
+        "method": "GET",
+        "path": "/"
+      },
+      "expected": "get"
+    },
+    {
+      "id": "slug/no-path",
+      "requirement": "INJECT-005",
+      "op": "recoverySlug",
+      "input": {
+        "method": "GET"
+      },
+      "expected": "unknown"
+    },
+    {
+      "id": "slug/no-method",
+      "requirement": "INJECT-005",
+      "op": "recoverySlug",
+      "input": {
+        "path": "/car/{id}"
+      },
+      "expected": "unknown"
+    },
+    {
+      "id": "slug/neither",
+      "requirement": "INJECT-005",
+      "op": "recoverySlug",
+      "input": {},
+      "expected": "unknown"
+    },
+    {
+      "id": "slug/strips-exotic-chars",
+      "requirement": "INJECT-005",
+      "op": "recoverySlug",
+      "input": {
+        "method": "POST",
+        "path": "/café/{id}.json"
+      },
+      "expected": "post-caf-id-json"
+    },
+    {
+      "id": "slug/collapses-dashes",
+      "requirement": "INJECT-005",
+      "op": "recoverySlug",
+      "input": {
+        "method": "GET",
+        "path": "///a///b///"
+      },
+      "expected": "get-a-b"
+    },
+    {
+      "id": "slug/uppercase-method",
+      "requirement": "INJECT-005",
+      "op": "recoverySlug",
+      "input": {
+        "method": "PATCH",
+        "path": "/x"
+      },
+      "expected": "patch-x"
+    }
+  ]
+}

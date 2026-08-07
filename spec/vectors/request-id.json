@@ -1,0 +1,120 @@
+{
+  "$generated": "GENERATED FILE - do not edit by hand. Inputs live in spec/cases.ts; run `npm run spec:vectors` to regenerate.",
+  "$contract": "spec/CONTRACT.md",
+  "specVersion": "1.0.0",
+  "cases": [
+    {
+      "id": "reqid/format-with-prefix",
+      "requirement": "REQID-004",
+      "op": "formatRequestId",
+      "input": {
+        "rawId": "9f18a0e2-1c3d-4b5a-8e7f-0a1b2c3d4e5f",
+        "prefix": "TST"
+      },
+      "expected": "TST-9f18a0e2-1c3d-4b5a-8e7f-0a1b2c3d4e5f"
+    },
+    {
+      "id": "reqid/format-without-prefix",
+      "requirement": "REQID-004",
+      "op": "formatRequestId",
+      "input": {
+        "rawId": "9f18a0e2-1c3d-4b5a-8e7f-0a1b2c3d4e5f"
+      },
+      "expected": "9f18a0e2-1c3d-4b5a-8e7f-0a1b2c3d4e5f"
+    },
+    {
+      "id": "reqid/strip",
+      "requirement": "REQID-005",
+      "op": "stripRequestIdPrefix",
+      "input": {
+        "requestId": "TST-9f18a0e2-1c3d-4b5a-8e7f-0a1b2c3d4e5f"
+      },
+      "expected": "9f18a0e2-1c3d-4b5a-8e7f-0a1b2c3d4e5f"
+    },
+    {
+      "id": "reqid/strip-noop",
+      "requirement": "REQID-005",
+      "op": "stripRequestIdPrefix",
+      "input": {
+        "requestId": "9f18a0e2-1c3d-4b5a-8e7f-0a1b2c3d4e5f"
+      },
+      "expected": "9f18a0e2-1c3d-4b5a-8e7f-0a1b2c3d4e5f"
+    },
+    {
+      "id": "reqid/strip-rejects-non-uuid-tail",
+      "requirement": "REQID-005",
+      "op": "stripRequestIdPrefix",
+      "input": {
+        "requestId": "TST-not-a-uuid"
+      },
+      "expected": "TST-not-a-uuid",
+      "note": "Group 1 must itself be a valid UUID, otherwise the input is returned untouched."
+    },
+    {
+      "id": "reqid/strip-rejects-long-prefix",
+      "requirement": "REQID-005",
+      "op": "stripRequestIdPrefix",
+      "input": {
+        "requestId": "TOOLONGP-9f18a0e2-1c3d-4b5a-8e7f-0a1b2c3d4e5f"
+      },
+      "expected": "TOOLONGP-9f18a0e2-1c3d-4b5a-8e7f-0a1b2c3d4e5f",
+      "note": "Prefixes are 1 to 7 alphanumerics."
+    },
+    {
+      "id": "reqid/headers-fresh",
+      "requirement": "REQID-010",
+      "op": "requestIdHeaders",
+      "input": {
+        "ourId": "9f18a0e2-1c3d-4b5a-8e7f-0a1b2c3d4e5f",
+        "incomingHeaders": {},
+        "hasApiKey": true
+      },
+      "expected": {
+        "x-request-id": "9f18a0e2-1c3d-4b5a-8e7f-0a1b2c3d4e5f"
+      }
+    },
+    {
+      "id": "reqid/headers-incoming-chain",
+      "requirement": "REQID-010",
+      "op": "requestIdHeaders",
+      "input": {
+        "ourId": "9f18a0e2-1c3d-4b5a-8e7f-0a1b2c3d4e5f",
+        "incomingHeaders": {
+          "x-request-id": "upstream-value"
+        },
+        "hasApiKey": true
+      },
+      "expected": {
+        "x-restless-id": "9f18a0e2-1c3d-4b5a-8e7f-0a1b2c3d4e5f"
+      },
+      "note": "An existing chain is never clobbered; we fall back to our own header name."
+    },
+    {
+      "id": "reqid/headers-with-prefix",
+      "requirement": "REQID-004",
+      "op": "requestIdHeaders",
+      "input": {
+        "ourId": "9f18a0e2-1c3d-4b5a-8e7f-0a1b2c3d4e5f",
+        "incomingHeaders": {},
+        "prefix": "TST",
+        "hasApiKey": true
+      },
+      "expected": {
+        "x-request-id": "TST-9f18a0e2-1c3d-4b5a-8e7f-0a1b2c3d4e5f"
+      }
+    },
+    {
+      "id": "reqid/headers-missing-key",
+      "requirement": "REQID-011",
+      "op": "requestIdHeaders",
+      "input": {
+        "ourId": "9f18a0e2-1c3d-4b5a-8e7f-0a1b2c3d4e5f",
+        "incomingHeaders": {},
+        "hasApiKey": false
+      },
+      "expected": {
+        "x-request-id": "missing-key"
+      }
+    }
+  ]
+}

@@ -1,0 +1,1119 @@
+{
+  "$generated": "GENERATED FILE - do not edit by hand. Inputs live in spec/cases.ts; run `npm run spec:vectors` to regenerate.",
+  "$contract": "spec/CONTRACT.md",
+  "specVersion": "1.0.0",
+  "cases": [
+    {
+      "id": "fp/404-parameterized",
+      "requirement": "FP-013",
+      "op": "fingerprint",
+      "input": {
+        "status": 404,
+        "method": "GET",
+        "route": "/car/{id}"
+      },
+      "expected": {
+        "strategy": "resource",
+        "key": "404:resource"
+      }
+    },
+    {
+      "id": "fp/404-concrete-id-is-parameterized",
+      "requirement": "FP-014",
+      "op": "fingerprint",
+      "input": {
+        "status": 404,
+        "method": "GET",
+        "route": "/car/123"
+      },
+      "expected": {
+        "strategy": "resource",
+        "key": "404:resource"
+      },
+      "note": "Normalization runs BEFORE the parameter test, so a concrete id counts."
+    },
+    {
+      "id": "fp/404-collapses-across-routes",
+      "requirement": "FP-013",
+      "op": "fingerprint",
+      "input": {
+        "status": 404,
+        "method": "DELETE",
+        "route": "/user/{id}/posts/{postId}"
+      },
+      "expected": {
+        "strategy": "resource",
+        "key": "404:resource"
+      }
+    },
+    {
+      "id": "fp/404-paramless-route",
+      "requirement": "FP-013",
+      "op": "fingerprint",
+      "input": {
+        "status": 404,
+        "method": "GET",
+        "route": "/users"
+      },
+      "expected": {
+        "strategy": "endpoint",
+        "key": "404:endpoint"
+      }
+    },
+    {
+      "id": "fp/404-no-route",
+      "requirement": "FP-014",
+      "op": "fingerprint",
+      "input": {
+        "status": 404,
+        "method": "GET"
+      },
+      "expected": {
+        "strategy": "endpoint",
+        "key": "404:endpoint"
+      }
+    },
+    {
+      "id": "fp/404-header-code-does-not-win",
+      "requirement": "FP-012",
+      "op": "fingerprint",
+      "input": {
+        "status": 404,
+        "method": "GET",
+        "route": "/car/{id}",
+        "responseHeaders": {
+          "x-restless-error-code": "not_found"
+        }
+      },
+      "expected": {
+        "strategy": "resource",
+        "key": "404:resource"
+      },
+      "note": "404 is intercepted before the header strategy. A generic not_found must not re-collapse the two buckets."
+    },
+    {
+      "id": "fp/404-body-code-does-not-win",
+      "requirement": "FP-012",
+      "op": "fingerprint",
+      "input": {
+        "status": 404,
+        "method": "GET",
+        "route": "/users",
+        "responseBody": {
+          "code": "not_found"
+        }
+      },
+      "expected": {
+        "strategy": "endpoint",
+        "key": "404:endpoint"
+      }
+    },
+    {
+      "id": "fp/header-code",
+      "requirement": "FP-010",
+      "op": "fingerprint",
+      "input": {
+        "status": 400,
+        "method": "GET",
+        "route": "/car/{id}",
+        "responseHeaders": {
+          "x-restless-error-code": "invalid_param"
+        }
+      },
+      "expected": {
+        "strategy": "header",
+        "key": "400:invalid_param"
+      }
+    },
+    {
+      "id": "fp/header-case-insensitive",
+      "requirement": "FP-017",
+      "op": "fingerprint",
+      "input": {
+        "status": 400,
+        "responseHeaders": {
+          "X-Restless-Error-Code": "invalid_param"
+        }
+      },
+      "expected": {
+        "strategy": "header",
+        "key": "400:invalid_param"
+      }
+    },
+    {
+      "id": "fp/header-rejects-sentence",
+      "requirement": "FP-015",
+      "op": "fingerprint",
+      "input": {
+        "status": 400,
+        "method": "POST",
+        "route": "/pay",
+        "responseHeaders": {
+          "x-restless-error-code": "Your card was declined."
+        }
+      },
+      "expected": {
+        "strategy": "route-only",
+        "key": "400:POST:/pay"
+      },
+      "note": "Not identifier-shaped, so it is not a code and the ladder continues."
+    },
+    {
+      "id": "fp/header-rejects-leading-digit",
+      "requirement": "FP-015",
+      "op": "fingerprint",
+      "input": {
+        "status": 400,
+        "method": "POST",
+        "route": "/pay",
+        "responseHeaders": {
+          "x-restless-error-code": "4xx_bad"
+        }
+      },
+      "expected": {
+        "strategy": "route-only",
+        "key": "400:POST:/pay"
+      }
+    },
+    {
+      "id": "fp/header-rejects-too-long",
+      "requirement": "FP-015",
+      "op": "fingerprint",
+      "input": {
+        "status": 400,
+        "method": "POST",
+        "route": "/pay",
+        "responseHeaders": {
+          "x-restless-error-code": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "expected": {
+        "strategy": "route-only",
+        "key": "400:POST:/pay"
+      }
+    },
+    {
+      "id": "fp/header-accepts-64",
+      "requirement": "FP-015",
+      "op": "fingerprint",
+      "input": {
+        "status": 400,
+        "responseHeaders": {
+          "x-restless-error-code": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "expected": {
+        "strategy": "header",
+        "key": "400:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    },
+    {
+      "id": "fp/body-code",
+      "requirement": "FP-016",
+      "op": "fingerprint",
+      "input": {
+        "status": 402,
+        "method": "POST",
+        "route": "/pay",
+        "responseBody": {
+          "code": "card_declined"
+        }
+      },
+      "expected": {
+        "strategy": "body-code",
+        "key": "402:card_declined"
+      }
+    },
+    {
+      "id": "fp/body-error_code",
+      "requirement": "FP-016",
+      "op": "fingerprint",
+      "input": {
+        "status": 402,
+        "responseBody": {
+          "error_code": "card_declined"
+        }
+      },
+      "expected": {
+        "strategy": "body-code",
+        "key": "402:card_declined"
+      }
+    },
+    {
+      "id": "fp/body-errorCode",
+      "requirement": "FP-016",
+      "op": "fingerprint",
+      "input": {
+        "status": 402,
+        "responseBody": {
+          "errorCode": "card_declined"
+        }
+      },
+      "expected": {
+        "strategy": "body-code",
+        "key": "402:card_declined"
+      }
+    },
+    {
+      "id": "fp/body-type",
+      "requirement": "FP-016",
+      "op": "fingerprint",
+      "input": {
+        "status": 402,
+        "responseBody": {
+          "type": "card_error"
+        }
+      },
+      "expected": {
+        "strategy": "body-code",
+        "key": "402:card_error"
+      }
+    },
+    {
+      "id": "fp/body-nested-error-code",
+      "requirement": "FP-016",
+      "op": "fingerprint",
+      "input": {
+        "status": 402,
+        "responseBody": {
+          "error": {
+            "code": "card_declined"
+          }
+        }
+      },
+      "expected": {
+        "strategy": "body-code",
+        "key": "402:card_declined"
+      }
+    },
+    {
+      "id": "fp/body-nested-error-type",
+      "requirement": "FP-016",
+      "op": "fingerprint",
+      "input": {
+        "status": 402,
+        "responseBody": {
+          "error": {
+            "type": "card_error"
+          }
+        }
+      },
+      "expected": {
+        "strategy": "body-code",
+        "key": "402:card_error"
+      }
+    },
+    {
+      "id": "fp/body-code-precedence",
+      "requirement": "FP-016",
+      "op": "fingerprint",
+      "input": {
+        "status": 402,
+        "responseBody": {
+          "type": "b",
+          "code": "a"
+        }
+      },
+      "expected": {
+        "strategy": "body-code",
+        "key": "402:a"
+      },
+      "note": "Field order is fixed: code before error_code before errorCode before type."
+    },
+    {
+      "id": "fp/body-code-exact-case",
+      "requirement": "FP-016",
+      "op": "fingerprint",
+      "input": {
+        "status": 402,
+        "method": "POST",
+        "route": "/pay",
+        "responseBody": {
+          "Code": "card_declined"
+        }
+      },
+      "expected": {
+        "strategy": "route-only",
+        "key": "402:POST:/pay"
+      },
+      "note": "Code field names are matched case-SENSITIVELY. Unlike redaction keys, there is no normalization here."
+    },
+    {
+      "id": "fp/header-beats-body",
+      "requirement": "FP-010",
+      "op": "fingerprint",
+      "input": {
+        "status": 402,
+        "responseHeaders": {
+          "x-restless-error-code": "from_header"
+        },
+        "responseBody": {
+          "code": "from_body"
+        }
+      },
+      "expected": {
+        "strategy": "header",
+        "key": "402:from_header"
+      }
+    },
+    {
+      "id": "fp/stack-basic",
+      "requirement": "FP-040",
+      "op": "fingerprint",
+      "input": {
+        "status": 500,
+        "method": "GET",
+        "route": "/users",
+        "stackTrace": "Error: boom\n    at findById (/Users/dev/proj/src/db/users.js:12:34)\n    at handler (/Users/dev/proj/src/routes/users.js:5:1)"
+      },
+      "expected": {
+        "strategy": "stack",
+        "key": "500:src/db/users.js:findById"
+      }
+    },
+    {
+      "id": "fp/stack-path-machine-independent",
+      "requirement": "FP-042",
+      "op": "fingerprint",
+      "input": {
+        "status": 500,
+        "method": "GET",
+        "route": "/users",
+        "stackTrace": "Error: boom\n    at findById (/srv/app/src/db/users.js:99:1)"
+      },
+      "expected": {
+        "strategy": "stack",
+        "key": "500:app/src/db/users.js:findById"
+      },
+      "note": "KNOWN DEFECT, pinned deliberately. This SHOULD produce the same key as fp/stack-basic - that is the whole point of FP-042 - but it does not, because the leftmost project-dir match means a deploy root named /app is itself the match. See FP-042's Known defect note; fixing it moves stored fingerprints and needs coordination."
+    },
+    {
+      "id": "fp/stack-skips-vendor",
+      "requirement": "FP-043",
+      "op": "fingerprint",
+      "input": {
+        "status": 500,
+        "stackTrace": "Error: boom\n    at wrap (/proj/node_modules/express/lib/router.js:1:1)\n    at emit (node:internal/events:100:1)\n    at real (/proj/src/db/users.js:12:34)"
+      },
+      "expected": {
+        "strategy": "stack",
+        "key": "500:src/db/users.js:real"
+      }
+    },
+    {
+      "id": "fp/stack-anonymous-frame",
+      "requirement": "FP-045",
+      "op": "fingerprint",
+      "input": {
+        "status": 500,
+        "stackTrace": "Error: boom\n    at /proj/src/db/users.js:12:34"
+      },
+      "expected": {
+        "strategy": "stack",
+        "key": "500:src/db/users.js:anonymous"
+      }
+    },
+    {
+      "id": "fp/stack-no-known-dir",
+      "requirement": "FP-042",
+      "op": "fingerprint",
+      "input": {
+        "status": 500,
+        "stackTrace": "Error: boom\n    at go (/opt/weird/place/thing.js:3:1)"
+      },
+      "expected": {
+        "strategy": "stack",
+        "key": "500:place/thing.js:go"
+      },
+      "note": "No src/lib/app/api/routes/controllers/handlers segment, so fall back to the last two path components."
+    },
+    {
+      "id": "fp/stack-array-form",
+      "requirement": "FP-040",
+      "op": "fingerprint",
+      "input": {
+        "status": 500,
+        "stackTrace": [
+          "Error: boom",
+          "    at findById (/proj/src/db/users.js:12:34)"
+        ]
+      },
+      "expected": {
+        "strategy": "stack",
+        "key": "500:src/db/users.js:findById"
+      }
+    },
+    {
+      "id": "fp/stack-not-used-for-4xx",
+      "requirement": "FP-010",
+      "op": "fingerprint",
+      "input": {
+        "status": 400,
+        "method": "GET",
+        "route": "/users",
+        "stackTrace": "Error: boom\n    at findById (/proj/src/db/users.js:12:34)"
+      },
+      "expected": {
+        "strategy": "route-only",
+        "key": "400:GET:/users"
+      },
+      "note": "The stack strategy is 5xx only."
+    },
+    {
+      "id": "fp/message-basic",
+      "requirement": "FP-010",
+      "op": "fingerprint",
+      "input": {
+        "status": 400,
+        "method": "POST",
+        "route": "/users",
+        "responseBody": {
+          "message": "Cannot read property of undefined"
+        }
+      },
+      "expected": {
+        "strategy": "message",
+        "key": "400:POST:/users:cannot-read-property-of-undefined"
+      }
+    },
+    {
+      "id": "fp/message-strips-ids",
+      "requirement": "FP-021",
+      "op": "fingerprint",
+      "input": {
+        "status": 400,
+        "method": "POST",
+        "route": "/users",
+        "responseBody": {
+          "message": "User user_abc123 not found in workspace 42"
+        }
+      },
+      "expected": {
+        "strategy": "message",
+        "key": "400:POST:/users:user-not-found-in-workspace"
+      }
+    },
+    {
+      "id": "fp/message-nested",
+      "requirement": "FP-018",
+      "op": "fingerprint",
+      "input": {
+        "status": 400,
+        "method": "POST",
+        "route": "/users",
+        "responseBody": {
+          "error": {
+            "message": "Something broke badly here"
+          }
+        }
+      },
+      "expected": {
+        "strategy": "message",
+        "key": "400:POST:/users:something-broke-badly-here"
+      }
+    },
+    {
+      "id": "fp/message-error-as-string",
+      "requirement": "FP-018",
+      "op": "fingerprint",
+      "input": {
+        "status": 400,
+        "method": "POST",
+        "route": "/users",
+        "responseBody": {
+          "error": "Something broke badly here"
+        }
+      },
+      "expected": {
+        "strategy": "message",
+        "key": "400:POST:/users:something-broke-badly-here"
+      }
+    },
+    {
+      "id": "fp/message-body-as-string",
+      "requirement": "FP-018",
+      "op": "fingerprint",
+      "input": {
+        "status": 400,
+        "method": "POST",
+        "route": "/users",
+        "responseBody": "Something broke badly here"
+      },
+      "expected": {
+        "strategy": "message",
+        "key": "400:POST:/users:something-broke-badly-here"
+      }
+    },
+    {
+      "id": "fp/message-empty-falls-through",
+      "requirement": "FP-022",
+      "op": "fingerprint",
+      "input": {
+        "status": 400,
+        "method": "POST",
+        "route": "/users",
+        "responseBody": {
+          "message": "42 1 7"
+        }
+      },
+      "expected": {
+        "strategy": "route-only",
+        "key": "400:POST:/users"
+      },
+      "note": "Everything normalizes away, so the message strategy does not fire and we land on route-only."
+    },
+    {
+      "id": "fp/route-only",
+      "requirement": "FP-010",
+      "op": "fingerprint",
+      "input": {
+        "status": 503,
+        "method": "GET",
+        "route": "/health"
+      },
+      "expected": {
+        "strategy": "route-only",
+        "key": "503:GET:/health"
+      }
+    },
+    {
+      "id": "fp/route-only-no-method",
+      "requirement": "FP-011",
+      "op": "fingerprint",
+      "input": {
+        "status": 503,
+        "route": "/health"
+      },
+      "expected": {
+        "strategy": "route-only",
+        "key": "503:GET:/health"
+      },
+      "note": "Absent method defaults to GET."
+    },
+    {
+      "id": "fp/route-only-no-route",
+      "requirement": "FP-032",
+      "op": "fingerprint",
+      "input": {
+        "status": 503,
+        "method": "GET"
+      },
+      "expected": {
+        "strategy": "route-only",
+        "key": "503:GET:/"
+      }
+    },
+    {
+      "id": "route/numeric",
+      "requirement": "FP-030",
+      "op": "normalizeRoute",
+      "input": {
+        "route": "/users/123"
+      },
+      "expected": "/users/:id"
+    },
+    {
+      "id": "route/uuid",
+      "requirement": "FP-030",
+      "op": "normalizeRoute",
+      "input": {
+        "route": "/users/550e8400-e29b-41d4-a716-446655440000"
+      },
+      "expected": "/users/:id"
+    },
+    {
+      "id": "route/uuid-uppercase",
+      "requirement": "FP-030",
+      "op": "normalizeRoute",
+      "input": {
+        "route": "/users/550E8400-E29B-41D4-A716-446655440000"
+      },
+      "expected": "/users/:id"
+    },
+    {
+      "id": "route/long-hex",
+      "requirement": "FP-030",
+      "op": "normalizeRoute",
+      "input": {
+        "route": "/blobs/deadbeefdeadbeef"
+      },
+      "expected": "/blobs/:id"
+    },
+    {
+      "id": "route/short-hex-untouched",
+      "requirement": "FP-030",
+      "op": "normalizeRoute",
+      "input": {
+        "route": "/blobs/deadbeefdeadbee"
+      },
+      "expected": "/blobs/deadbeefdeadbee",
+      "note": "15 hex chars is one below the 16 threshold, so it stays."
+    },
+    {
+      "id": "route/multiple-segments",
+      "requirement": "FP-031",
+      "op": "normalizeRoute",
+      "input": {
+        "route": "/users/1/posts/2/comments/3"
+      },
+      "expected": "/users/:id/posts/:id/comments/:id"
+    },
+    {
+      "id": "route/already-templated",
+      "requirement": "FP-030",
+      "op": "normalizeRoute",
+      "input": {
+        "route": "/users/{id}"
+      },
+      "expected": "/users/{id}"
+    },
+    {
+      "id": "route/already-colon",
+      "requirement": "FP-030",
+      "op": "normalizeRoute",
+      "input": {
+        "route": "/users/:id"
+      },
+      "expected": "/users/:id"
+    },
+    {
+      "id": "route/trailing-slash",
+      "requirement": "FP-031",
+      "op": "normalizeRoute",
+      "input": {
+        "route": "/users/123/"
+      },
+      "expected": "/users/:id/"
+    },
+    {
+      "id": "route/index-zero-exempt",
+      "requirement": "FP-031",
+      "op": "normalizeRoute",
+      "input": {
+        "route": "123"
+      },
+      "expected": "123",
+      "note": "The text before the first slash is never normalized. Preserved deliberately so stored fingerprints stay stable."
+    },
+    {
+      "id": "route/index-zero-exempt-with-tail",
+      "requirement": "FP-031",
+      "op": "normalizeRoute",
+      "input": {
+        "route": "123/456"
+      },
+      "expected": "123/:id"
+    },
+    {
+      "id": "route/empty",
+      "requirement": "FP-032",
+      "op": "normalizeRoute",
+      "input": {
+        "route": ""
+      },
+      "expected": "/"
+    },
+    {
+      "id": "route/null",
+      "requirement": "FP-032",
+      "op": "normalizeRoute",
+      "input": {
+        "route": null
+      },
+      "expected": "/"
+    },
+    {
+      "id": "route/double-slash",
+      "requirement": "FP-031",
+      "op": "normalizeRoute",
+      "input": {
+        "route": "//users//123"
+      },
+      "expected": "//users//:id"
+    },
+    {
+      "id": "route/zero",
+      "requirement": "FP-030",
+      "op": "normalizeRoute",
+      "input": {
+        "route": "/users/0"
+      },
+      "expected": "/users/:id"
+    },
+    {
+      "id": "route/leading-zeros",
+      "requirement": "FP-030",
+      "op": "normalizeRoute",
+      "input": {
+        "route": "/users/007"
+      },
+      "expected": "/users/:id"
+    },
+    {
+      "id": "route/segment-with-trailing-newline",
+      "requirement": "PRIM-005",
+      "op": "normalizeRoute",
+      "input": {
+        "route": "/users/5\n"
+      },
+      "expected": "/users/5\n",
+      "note": "Found by differential fuzz. Python's `$` also matches before a trailing newline, so ^[0-9]+$ accepted \"5\\n\" and normalized it to :id while JS left it alone. Anchored patterns must match the WHOLE string (re.fullmatch)."
+    },
+    {
+      "id": "route/not-quite-uuid",
+      "requirement": "FP-030",
+      "op": "normalizeRoute",
+      "input": {
+        "route": "/users/550e8400-e29b-41d4-a716-44665544000"
+      },
+      "expected": "/users/550e8400-e29b-41d4-a716-44665544000",
+      "note": "One char short of a UUID, and only 35 chars so not long-hex either. Stays."
+    },
+    {
+      "id": "path/src",
+      "requirement": "FP-042",
+      "op": "projectRelative",
+      "input": {
+        "file": "/Users/dev/proj/src/db/users.js"
+      },
+      "expected": "src/db/users.js"
+    },
+    {
+      "id": "path/src-other-machine",
+      "requirement": "FP-042",
+      "op": "projectRelative",
+      "input": {
+        "file": "/srv/app/src/db/users.js"
+      },
+      "expected": "app/src/db/users.js",
+      "note": "KNOWN DEFECT, pinned deliberately: this returns app/src/db/users.js, NOT src/db/users.js, so it does not match path/src. Docker WORKDIR /app and Heroku both root at /app, so production and laptop fingerprints diverge for the same file. See FP-042."
+    },
+    {
+      "id": "path/docker-root",
+      "requirement": "FP-042",
+      "op": "projectRelative",
+      "input": {
+        "file": "/app/src/db/users.js"
+      },
+      "expected": "app/src/db/users.js",
+      "note": "The single most common containerized layout, and the one the defect bites hardest."
+    },
+    {
+      "id": "path/lib",
+      "requirement": "FP-042",
+      "op": "projectRelative",
+      "input": {
+        "file": "/opt/x/lib/thing.py"
+      },
+      "expected": "lib/thing.py"
+    },
+    {
+      "id": "path/routes",
+      "requirement": "FP-042",
+      "op": "projectRelative",
+      "input": {
+        "file": "/a/b/routes/users.rb"
+      },
+      "expected": "routes/users.rb"
+    },
+    {
+      "id": "path/controllers",
+      "requirement": "FP-042",
+      "op": "projectRelative",
+      "input": {
+        "file": "/a/controllers/x.php"
+      },
+      "expected": "controllers/x.php"
+    },
+    {
+      "id": "path/handlers",
+      "requirement": "FP-042",
+      "op": "projectRelative",
+      "input": {
+        "file": "/a/handlers/x.go"
+      },
+      "expected": "handlers/x.go"
+    },
+    {
+      "id": "path/api",
+      "requirement": "FP-042",
+      "op": "projectRelative",
+      "input": {
+        "file": "/a/api/x.js"
+      },
+      "expected": "api/x.js"
+    },
+    {
+      "id": "path/app",
+      "requirement": "FP-042",
+      "op": "projectRelative",
+      "input": {
+        "file": "/a/app/x.js"
+      },
+      "expected": "app/x.js"
+    },
+    {
+      "id": "path/no-known-dir",
+      "requirement": "FP-042",
+      "op": "projectRelative",
+      "input": {
+        "file": "/opt/weird/place/thing.js"
+      },
+      "expected": "place/thing.js",
+      "note": "Falls back to the last two path components."
+    },
+    {
+      "id": "path/leftmost-wins",
+      "requirement": "FP-042",
+      "op": "projectRelative",
+      "input": {
+        "file": "/a/src/b/src/c.js"
+      },
+      "expected": "src/b/src/c.js",
+      "note": "The FIRST project-dir match wins, not the last."
+    },
+    {
+      "id": "path/bare-filename",
+      "requirement": "FP-042",
+      "op": "projectRelative",
+      "input": {
+        "file": "thing.js"
+      },
+      "expected": "thing.js"
+    },
+    {
+      "id": "path/single-segment",
+      "requirement": "FP-042",
+      "op": "projectRelative",
+      "input": {
+        "file": "/thing.js"
+      },
+      "expected": "/thing.js"
+    },
+    {
+      "id": "msg/basic",
+      "requirement": "FP-020",
+      "op": "normalizeMessage",
+      "input": {
+        "message": "Cannot read property of undefined"
+      },
+      "expected": "cannot-read-property-of-undefined"
+    },
+    {
+      "id": "msg/lowercases",
+      "requirement": "PRIM-020",
+      "op": "normalizeMessage",
+      "input": {
+        "message": "CANNOT READ PROPERTY"
+      },
+      "expected": "cannot-read-property"
+    },
+    {
+      "id": "msg/strips-url",
+      "requirement": "FP-020",
+      "op": "normalizeMessage",
+      "input": {
+        "message": "failed calling https://api.example.com/v1/x?a=1 twice"
+      },
+      "expected": "failed-calling-twice"
+    },
+    {
+      "id": "msg/strips-email",
+      "requirement": "FP-020",
+      "op": "normalizeMessage",
+      "input": {
+        "message": "no account for jane.doe@example.com found"
+      },
+      "expected": "no-account-for-found"
+    },
+    {
+      "id": "msg/strips-quoted",
+      "requirement": "FP-020",
+      "op": "normalizeMessage",
+      "input": {
+        "message": "column 'user_name' does not exist"
+      },
+      "expected": "column-does-not-exist"
+    },
+    {
+      "id": "msg/strips-double-quoted",
+      "requirement": "FP-020",
+      "op": "normalizeMessage",
+      "input": {
+        "message": "column \"user_name\" does not exist"
+      },
+      "expected": "column-does-not-exist"
+    },
+    {
+      "id": "msg/strips-digit-words",
+      "requirement": "FP-021",
+      "op": "normalizeMessage",
+      "input": {
+        "message": "token sk_live_4242 rejected for user abc123"
+      },
+      "expected": "token-rejected-for-user"
+    },
+    {
+      "id": "msg/digit-word-not-just-digit",
+      "requirement": "FP-021",
+      "op": "normalizeMessage",
+      "input": {
+        "message": "prefix abc123 suffix"
+      },
+      "expected": "prefix-suffix",
+      "note": "The whole word goes, not just the digits. Otherwise 'abc' would survive and still influence the key."
+    },
+    {
+      "id": "msg/hyphenated-digit-word",
+      "requirement": "FP-021",
+      "op": "normalizeMessage",
+      "input": {
+        "message": "request id abc-123-def failed"
+      },
+      "expected": "request-id-failed"
+    },
+    {
+      "id": "msg/underscore-is-word-char",
+      "requirement": "PRIM-001",
+      "op": "normalizeMessage",
+      "input": {
+        "message": "user_123_name missing"
+      },
+      "expected": "missing"
+    },
+    {
+      "id": "msg/drops-short-tokens",
+      "requirement": "FP-020",
+      "op": "normalizeMessage",
+      "input": {
+        "message": "a bb c ddd e ffff"
+      },
+      "expected": "bb-ddd-ffff",
+      "note": "Tokens of length 1 are dropped."
+    },
+    {
+      "id": "msg/caps-at-six",
+      "requirement": "FP-020",
+      "op": "normalizeMessage",
+      "input": {
+        "message": "one two three four five six seven eight nine"
+      },
+      "expected": "one-two-three-four-five-six"
+    },
+    {
+      "id": "msg/empty",
+      "requirement": "FP-022",
+      "op": "normalizeMessage",
+      "input": {
+        "message": ""
+      },
+      "expected": ""
+    },
+    {
+      "id": "msg/all-stripped",
+      "requirement": "FP-022",
+      "op": "normalizeMessage",
+      "input": {
+        "message": "42 7 1"
+      },
+      "expected": ""
+    },
+    {
+      "id": "msg/nbsp-whitespace",
+      "requirement": "PRIM-002",
+      "op": "normalizeMessage",
+      "input": {
+        "message": "failed to connect"
+      },
+      "expected": "failed-to-connect",
+      "note": "NBSP is in WS. A port using ASCII-only \\s would treat it as punctuation instead, and while both routes happen to yield a space here, the class must still be right."
+    },
+    {
+      "id": "msg/unicode-word-chars-stripped",
+      "requirement": "PRIM-001",
+      "op": "normalizeMessage",
+      "input": {
+        "message": "erreur café serveur"
+      },
+      "expected": "erreur-caf-serveur",
+      "note": "WORD is ASCII-only. Python's default Unicode-aware \\w would keep the é and produce a different key."
+    },
+    {
+      "id": "msg/cjk-stripped",
+      "requirement": "PRIM-001",
+      "op": "normalizeMessage",
+      "input": {
+        "message": "接続 failed 完全に"
+      },
+      "expected": "failed"
+    },
+    {
+      "id": "msg/turkish-dotted-i",
+      "requirement": "PRIM-020",
+      "op": "normalizeMessage",
+      "input": {
+        "message": "İSTANBUL connection failed"
+      },
+      "expected": "stanbul-connection-failed",
+      "note": "Locale-independent lowercase. A Turkish-locale mapping would differ."
+    },
+    {
+      "id": "msg/final-sigma",
+      "requirement": "PRIM-021",
+      "op": "normalizeMessage",
+      "input": {
+        "message": "ΑΣ failed"
+      },
+      "expected": "failed",
+      "note": "DOES NOT DISCRIMINATE - kept as executable documentation. Greek is not in WORD, so step 6 strips both sigma forms to a space before either reaches a token. A Go driver without Final_Sigma passes this. See the PRIM-021 note."
+    },
+    {
+      "id": "msg/medial-sigma",
+      "requirement": "PRIM-021",
+      "op": "normalizeMessage",
+      "input": {
+        "message": "ΑΣΑ failed"
+      },
+      "expected": "failed",
+      "note": "Companion to msg/final-sigma, and equally non-discriminating. Both exist so that if a future change ever puts lowercased non-ASCII on the wire, these cases start failing loudly instead of silently diverging."
+    },
+    {
+      "id": "msg/eszett",
+      "requirement": "PRIM-020",
+      "op": "normalizeMessage",
+      "input": {
+        "message": "STRASSE ausfall"
+      },
+      "expected": "strasse-ausfall",
+      "note": "Simple lowercase, not full case folding: casefold would map ß to ss and change tokenization."
+    },
+    {
+      "id": "msg/emoji",
+      "requirement": "FP-020",
+      "op": "normalizeMessage",
+      "input": {
+        "message": "deploy 🚀 failed badly"
+      },
+      "expected": "deploy-failed-badly"
+    },
+    {
+      "id": "msg/punctuation-collapse",
+      "requirement": "FP-020",
+      "op": "normalizeMessage",
+      "input": {
+        "message": "one...two,,,three!!!four"
+      },
+      "expected": "one-two-three-four"
+    },
+    {
+      "id": "msg/hyphen-preserved",
+      "requirement": "FP-020",
+      "op": "normalizeMessage",
+      "input": {
+        "message": "not-found while resolving"
+      },
+      "expected": "not-found-while-resolving",
+      "note": "Hyphen is neither WORD nor punctuation-to-strip; it survives inside a token."
+    }
+  ]
+}

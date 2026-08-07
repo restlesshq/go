@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: test (go ${{ matrix.go-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        go-version: ["1.23", "1.24", "1.25"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go-version }}
+
+      - run: gofmt -l . | tee /dev/stderr | (! read)
+        name: gofmt
+      - run: go vet ./...
+
+      # Includes vectors_test.go, which replays the vendored conformance
+      # vectors in-process. A Go developer gets a contract failure without
+      # needing Node installed.
+      - run: go test -race ./...
+
+  conformance:
+    name: conformance harness
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version: "1.25" }
+      - uses: actions/setup-node@v4
+        with: { node-version: 20.x }
+
+      # META-003: an SDK must run the shared harness against its driver.
+      # The harness and vectors live in the Node SDK, the reference
+      # implementation. restlesshq/node is public, so the default
+      # GITHUB_TOKEN can check it out even from this private repo.
+      #
+      # This job stays red until the conformance kit lands on node's main
+      # branch, because spec/ does not exist there yet. The in-process
+      # replay in the `test` job above covers the same vectors meanwhile,
+      # from the pinned copy in spec/.
+      - name: Check out the reference SDK
+        uses: actions/checkout@v4
+        with:
+          repository: restlesshq/node
+          path: .reference
+
+      - run: go build -o /tmp/conformance ./cmd/conformance
+
+      - name: Replay conformance vectors
+        run: |
+          node .reference/spec/harness/run-vectors.mjs \
+            --json conformance.json -- /tmp/conformance
+
+      - name: Differential fuzz against the reference
+        run: |
+          cd .reference && npm ci && npm run spec:driver && cd ..
+          node .reference/spec/harness/fuzz.mjs \
+            --ref "node .reference/spec/driver/.build/node.js" \
+            --test "/tmp/conformance" \
+            --iterations 20000
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: conformance-report
+          path: conformance.json

@@ -1,0 +1,175 @@
+{
+  "$generated": "GENERATED FILE - do not edit by hand. Inputs live in spec/cases.ts; run `npm run spec:vectors` to regenerate.",
+  "$contract": "spec/CONTRACT.md",
+  "specVersion": "1.0.0",
+  "cases": [
+    {
+      "id": "mask/ascii",
+      "requirement": "MASK-001",
+      "op": "mask",
+      "input": {
+        "apiKey": "rdme_abc123wxyz"
+      },
+      "expected": "sha512-9EnwUksy3KdeldWsv177Ob0E4K8TsatUMyyhhcaihPd82ZqOT7blNbAH5Cy4iQ4W6DjvGgKE1lSJ4qljG9uviQ==?wxyz"
+    },
+    {
+      "id": "mask/short",
+      "requirement": "MASK-006",
+      "op": "mask",
+      "input": {
+        "apiKey": "ab"
+      },
+      "expected": "sha512-LUCKBxfsGIFYJ4p5bGiQRDYdxv3eKNbwSXO4CJbhgjl1zb8S62P54FkTKO4jXYDptb8apqRPRhf/PK9kAOsXLQ==?ab",
+      "note": "Fewer than 4 code points: the tail is the whole key."
+    },
+    {
+      "id": "mask/exactly-four",
+      "requirement": "MASK-006",
+      "op": "mask",
+      "input": {
+        "apiKey": "abcd"
+      },
+      "expected": "sha512-2AIvIGCtbv0perc9zFNVybIUBUsNF3ahNqZp0mp9OxT3OqDQ6/8Z7jMzaPAWS2QZqW2knj5IF1Pn6Wtxa9zLbw==?abcd"
+    },
+    {
+      "id": "mask/utf8-hashing",
+      "requirement": "MASK-004",
+      "op": "mask",
+      "input": {
+        "apiKey": "clé-café-secrète"
+      },
+      "expected": "sha512-zhSdzH1P6XSXWG3BiSVUhMerMf+J5HLarUxl7IxPm+0cLnii9aUdOeuLSIG746lYVUqvnAoEy0OKnaqeMYhhkw==?rète",
+      "note": "Pins that the digest is over UTF-8 bytes, not UTF-16 or Latin-1."
+    },
+    {
+      "id": "mask/astral-tail",
+      "requirement": "MASK-006",
+      "op": "mask",
+      "input": {
+        "apiKey": "key-with-emoji-🙂🚀"
+      },
+      "expected": "sha512-G7f+UCyi96tbTnudRvKDmKy2mallqX20KRnHQhzK/xvkaZhzKI2HI8/qO/EiGM3hHsx63E3hy2jFpTAwamxWww==?i-🙂🚀",
+      "note": "The single highest-value case in this file. A UTF-16 slice(-4) splits the rocket's surrogate pair and yields a different, ill-formed tail. Code-point slicing gives the last four real characters."
+    },
+    {
+      "id": "mask/combining-marks",
+      "requirement": "MASK-006",
+      "op": "mask",
+      "input": {
+        "apiKey": "secret-ȩ́"
+      },
+      "expected": "sha512-u1F1KyzkFFoPkzxHutl8u1Uw2Gybu3XL5VnUoQ9KwZ9dOEQeVLd5FRz0bp9Dx/t2UFf7yaooTTUJJpYtBTTd4g==?-ȩ́",
+      "note": "Combining marks are separate code points and count individually. We do NOT normalize (NFC would change the digest)."
+    },
+    {
+      "id": "mask/cjk",
+      "requirement": "MASK-004",
+      "op": "mask",
+      "input": {
+        "apiKey": "鍵-秘密-値-一二三四"
+      },
+      "expected": "sha512-pdC8U8FfDRw9Le0IfdI0mRJy5+kUpDl7jDbaXp2zOfHCCo4Qm7PTy1/mxUU46K80C96qlVd4XiaC2xwTWJ8owA==?一二三四"
+    },
+    {
+      "id": "mask/base64-padding",
+      "requirement": "MASK-003",
+      "op": "mask",
+      "input": {
+        "apiKey": "a"
+      },
+      "expected": "sha512-H0D8ktokFpR1CXnubPWC8tXX0o4YM13gWrxU0FYOD1MChgxlK/CNVgJSql50IQVG82n7u86MEs/HlXsmUv6adQ==?a",
+      "note": "SHA-512 is 64 bytes, so standard base64 always emits exactly 88 chars ending in '=='. Catches a port that used base64url or stripped padding."
+    },
+    {
+      "id": "mask/empty",
+      "requirement": "MASK-010",
+      "op": "mask",
+      "input": {
+        "apiKey": ""
+      },
+      "expected": null
+    },
+    {
+      "id": "mask/null",
+      "requirement": "MASK-010",
+      "op": "mask",
+      "input": {
+        "apiKey": null
+      },
+      "expected": null
+    },
+    {
+      "id": "mask/placeholder-api-key-here",
+      "requirement": "MASK-011",
+      "op": "mask",
+      "input": {
+        "apiKey": "API_KEY_HERE"
+      },
+      "expected": null
+    },
+    {
+      "id": "mask/placeholder-your-api-key",
+      "requirement": "MASK-011",
+      "op": "mask",
+      "input": {
+        "apiKey": "YOUR_API_KEY"
+      },
+      "expected": null
+    },
+    {
+      "id": "mask/placeholder-your-key",
+      "requirement": "MASK-011",
+      "op": "mask",
+      "input": {
+        "apiKey": "YOUR_KEY"
+      },
+      "expected": null
+    },
+    {
+      "id": "mask/placeholder-replace-me",
+      "requirement": "MASK-011",
+      "op": "mask",
+      "input": {
+        "apiKey": "REPLACE_ME"
+      },
+      "expected": null
+    },
+    {
+      "id": "mask/placeholder-case-sensitive",
+      "requirement": "MASK-011",
+      "op": "mask",
+      "input": {
+        "apiKey": "api_key_here"
+      },
+      "expected": "sha512-B+B/ipsQny7yJ+DxnkOroo/6tTYwJxAerKK7+9v74bpnFdPHqcqojnn32/yhOnrdacucCy8kOMcjM2QBDLmmGg==?here",
+      "note": "Placeholders match exactly. A lowercase variant is a real key."
+    },
+    {
+      "id": "mask/idempotent",
+      "requirement": "MASK-012",
+      "op": "mask",
+      "input": {
+        "apiKey": "sha512-3q2+7w==?wxyz"
+      },
+      "expected": "sha512-3q2+7w==?wxyz"
+    },
+    {
+      "id": "mask/redacted-passthrough-long",
+      "requirement": "MASK-013",
+      "op": "mask",
+      "input": {
+        "apiKey": "<REDACTED:24:u234>"
+      },
+      "expected": "<REDACTED:24:u234>"
+    },
+    {
+      "id": "mask/redacted-passthrough-short",
+      "requirement": "MASK-013",
+      "op": "mask",
+      "input": {
+        "apiKey": "<REDACTED:7>"
+      },
+      "expected": "<REDACTED:7>"
+    }
+  ]
+}

@@ -1,0 +1,775 @@
+{
+  "$generated": "GENERATED FILE - do not edit by hand. Inputs live in spec/cases.ts; run `npm run spec:vectors` to regenerate.",
+  "$contract": "spec/CONTRACT.md",
+  "specVersion": "1.0.0",
+  "cases": [
+    {
+      "id": "redactValue/long",
+      "requirement": "REDACT-001",
+      "op": "redactValue",
+      "input": {
+        "value": "sk_1234567890abcdef"
+      },
+      "expected": "<REDACTED:19:cdef>"
+    },
+    {
+      "id": "redactValue/boundary-7",
+      "requirement": "REDACT-001",
+      "op": "redactValue",
+      "input": {
+        "value": "1234567"
+      },
+      "expected": "<REDACTED:7>",
+      "note": "One below the tail threshold: no tail."
+    },
+    {
+      "id": "redactValue/boundary-8",
+      "requirement": "REDACT-001",
+      "op": "redactValue",
+      "input": {
+        "value": "12345678"
+      },
+      "expected": "<REDACTED:8:5678>",
+      "note": "Exactly at the threshold: tail appears."
+    },
+    {
+      "id": "redactValue/empty",
+      "requirement": "REDACT-001",
+      "op": "redactValue",
+      "input": {
+        "value": ""
+      },
+      "expected": "<REDACTED:0>"
+    },
+    {
+      "id": "redactValue/astral",
+      "requirement": "REDACT-002",
+      "op": "redactValue",
+      "input": {
+        "value": "🙂🙂🙂🙂🙂🙂🙂🙂"
+      },
+      "expected": "<REDACTED:8:🙂🙂🙂🙂>",
+      "note": "8 code points, 16 UTF-16 code units, 32 UTF-8 bytes. The sentinel must say 8. Catches the most common porting mistake in this file."
+    },
+    {
+      "id": "redactValue/mixed-width",
+      "requirement": "REDACT-002",
+      "op": "redactValue",
+      "input": {
+        "value": "abc-日本語-🚀-xyz"
+      },
+      "expected": "<REDACTED:13:-xyz>"
+    },
+    {
+      "id": "redactValue/astral-tail-split",
+      "requirement": "REDACT-002",
+      "op": "redactValue",
+      "input": {
+        "value": "0123456789🚀"
+      },
+      "expected": "<REDACTED:11:789🚀>",
+      "note": "A UTF-16 slice(-4) ends mid-surrogate here and produces an ill-formed tail."
+    },
+    {
+      "id": "redactHeaders/defaults",
+      "requirement": "REDACT-011",
+      "op": "redactHeaders",
+      "input": {
+        "headers": {
+          "authorization": "Bearer abcdef0123456789",
+          "cookie": "sid=xyz9999",
+          "content-type": "application/json",
+          "host": "example.com"
+        }
+      },
+      "expected": {
+        "authorization": "Bearer <REDACTED:16:6789>",
+        "cookie": "<REDACTED:11:9999>",
+        "content-type": "application/json",
+        "host": "example.com"
+      }
+    },
+    {
+      "id": "redactHeaders/case-insensitive",
+      "requirement": "REDACT-010",
+      "op": "redactHeaders",
+      "input": {
+        "headers": {
+          "Authorization": "Bearer xxxxxxxxxxxx",
+          "X-API-KEY": "sk_abcdef0123"
+        }
+      },
+      "expected": {
+        "Authorization": "Bearer <REDACTED:12:xxxx>",
+        "X-API-KEY": "<REDACTED:13:0123>"
+      }
+    },
+    {
+      "id": "redactHeaders/scheme-preserved-bearer",
+      "requirement": "REDACT-016",
+      "op": "redactHeaders",
+      "input": {
+        "headers": {
+          "authorization": "Bearer abcdef0123456789"
+        }
+      },
+      "expected": {
+        "authorization": "Bearer <REDACTED:16:6789>"
+      }
+    },
+    {
+      "id": "redactHeaders/scheme-preserved-basic",
+      "requirement": "REDACT-016",
+      "op": "redactHeaders",
+      "input": {
+        "headers": {
+          "authorization": "Basic dXNlcjpwYXNzd29yZA=="
+        }
+      },
+      "expected": {
+        "authorization": "Basic <REDACTED:20:ZA==>"
+      }
+    },
+    {
+      "id": "redactHeaders/scheme-multi-space",
+      "requirement": "REDACT-016",
+      "op": "redactHeaders",
+      "input": {
+        "headers": {
+          "authorization": "Bearer    abcdef0123456789"
+        }
+      },
+      "expected": {
+        "authorization": "Bearer    <REDACTED:16:6789>"
+      },
+      "note": "Split on the first whitespace RUN; the run itself is preserved verbatim."
+    },
+    {
+      "id": "redactHeaders/scheme-with-cr-in-credential",
+      "requirement": "REDACT-016",
+      "op": "redactHeaders",
+      "input": {
+        "headers": {
+          "authorization": "Bearer abc\rdef0123456789"
+        }
+      },
+      "expected": {
+        "authorization": "Bearer <REDACTED:17:6789>"
+      },
+      "note": "Found by differential fuzz. The old /^(\\S+)(\\s+)(\\S.*)$/ did not match here because JS '.' excludes CR, so Node redacted the whole value while Python (re.DOTALL) preserved the scheme. The explicit scan makes both preserve it."
+    },
+    {
+      "id": "redactHeaders/scheme-with-astral-credential",
+      "requirement": "REDACT-016",
+      "op": "redactHeaders",
+      "input": {
+        "headers": {
+          "authorization": "Bearer abcdef012345🚀"
+        }
+      },
+      "expected": {
+        "authorization": "Bearer <REDACTED:13:345🚀>"
+      },
+      "note": "Scheme split walks code points, so the sentinel length counts the rocket once."
+    },
+    {
+      "id": "redactHeaders/leading-whitespace",
+      "requirement": "REDACT-016",
+      "op": "redactHeaders",
+      "input": {
+        "headers": {
+          "authorization": "   Bearer abcdef0123"
+        }
+      },
+      "expected": {
+        "authorization": "<REDACTED:20:0123>"
+      },
+      "note": "Value starts with whitespace: there is no scheme to preserve, so redact whole."
+    },
+    {
+      "id": "redactHeaders/scheme-only-trailing-space",
+      "requirement": "REDACT-016",
+      "op": "redactHeaders",
+      "input": {
+        "headers": {
+          "authorization": "Bearer   "
+        }
+      },
+      "expected": {
+        "authorization": "<REDACTED:9:r   >"
+      },
+      "note": "Whitespace but no credential after it: redact whole."
+    },
+    {
+      "id": "redactHeaders/no-scheme",
+      "requirement": "REDACT-017",
+      "op": "redactHeaders",
+      "input": {
+        "headers": {
+          "authorization": "eyJhbGciOiJIUzI1NiJ9.payload.sig"
+        }
+      },
+      "expected": {
+        "authorization": "<REDACTED:32:.sig>"
+      },
+      "note": "A bare JWT has no space, so the whole value is the secret."
+    },
+    {
+      "id": "redactHeaders/proxy-authorization",
+      "requirement": "REDACT-016",
+      "op": "redactHeaders",
+      "input": {
+        "headers": {
+          "proxy-authorization": "Digest abcdef0123456789"
+        }
+      },
+      "expected": {
+        "proxy-authorization": "Digest <REDACTED:16:6789>"
+      }
+    },
+    {
+      "id": "redactHeaders/x-api-key-whole",
+      "requirement": "REDACT-018",
+      "op": "redactHeaders",
+      "input": {
+        "headers": {
+          "x-api-key": "Bearer looks-like-a-scheme-but-is-not"
+        }
+      },
+      "expected": {
+        "x-api-key": "<REDACTED:37:-not>"
+      },
+      "note": "Only authorization / proxy-authorization get scheme treatment. Everything else is redacted whole even if it looks schemed."
+    },
+    {
+      "id": "redactHeaders/set-cookie",
+      "requirement": "REDACT-011",
+      "op": "redactHeaders",
+      "input": {
+        "headers": {
+          "set-cookie": "sid=abcdef; HttpOnly"
+        }
+      },
+      "expected": {
+        "set-cookie": "<REDACTED:20:Only>"
+      }
+    },
+    {
+      "id": "redactHeaders/unicode-fold-kelvin",
+      "requirement": "REDACT-010",
+      "op": "redactHeaders",
+      "input": {
+        "headers": {
+          "x-api-Key": "supersecretvalue"
+        }
+      },
+      "expected": {
+        "x-api-Key": "<REDACTED:16:alue>"
+      },
+      "note": "SECURITY. U+212A KELVIN SIGN full-lowercases to 'k', so this IS x-api-key and MUST be redacted. An ASCII-only fold leaves it unmatched and ships the secret. Every port initially got this backwards and leaked the value, which is why this case exists."
+    },
+    {
+      "id": "redactHeaders/unicode-fold-longs",
+      "requirement": "REDACT-010",
+      "op": "redactHeaders",
+      "input": {
+        "headers": {
+          "ſet-cookie": "sid=abcdefgh"
+        }
+      },
+      "expected": {
+        "ſet-cookie": "sid=abcdefgh"
+      },
+      "note": "U+017F LATIN SMALL LETTER LONG S is already lowercase, so full lowercasing does NOT turn it into 's'. This one must NOT be redacted - the rule is fold, not fuzzy-match."
+    },
+    {
+      "id": "redactHeaders/extra-denylist",
+      "requirement": "REDACT-015",
+      "op": "redactHeaders",
+      "input": {
+        "headers": {
+          "x-custom-secret": "verylongsecretvalue"
+        },
+        "extra": [
+          "x-custom-secret"
+        ]
+      },
+      "expected": {
+        "x-custom-secret": "<REDACTED:19:alue>"
+      }
+    },
+    {
+      "id": "redactHeaders/extra-normalized",
+      "requirement": "REDACT-010",
+      "op": "redactHeaders",
+      "input": {
+        "headers": {
+          "X_Custom_Secret": "verylongsecretvalue"
+        },
+        "extra": [
+          "x-custom-secret"
+        ]
+      },
+      "expected": {
+        "X_Custom_Secret": "<REDACTED:19:alue>"
+      },
+      "note": "Extension entries normalize the same way defaults do."
+    },
+    {
+      "id": "redactHeaders/defaults-not-removable",
+      "requirement": "REDACT-014",
+      "op": "redactHeaders",
+      "input": {
+        "headers": {
+          "authorization": "Bearer abcdef0123456789"
+        },
+        "extra": [
+          "unrelated"
+        ]
+      },
+      "expected": {
+        "authorization": "Bearer <REDACTED:16:6789>"
+      }
+    },
+    {
+      "id": "redactUrl/basic",
+      "requirement": "REDACT-025",
+      "op": "redactUrl",
+      "input": {
+        "url": "https://api.example/v1/foo?bar=ok&api_key=sk_abcdef123&token=tk_9876543210"
+      },
+      "expected": "https://api.example/v1/foo?bar=ok&api_key=%3CREDACTED%3A12%3Af123%3E&token=%3CREDACTED%3A13%3A3210%3E"
+    },
+    {
+      "id": "redactUrl/clean",
+      "requirement": "REDACT-025",
+      "op": "redactUrl",
+      "input": {
+        "url": "https://api.example/v1/foo?bar=ok"
+      },
+      "expected": "https://api.example/v1/foo?bar=ok"
+    },
+    {
+      "id": "redactUrl/not-a-url",
+      "requirement": "REDACT-026",
+      "op": "redactUrl",
+      "input": {
+        "url": "not a url"
+      },
+      "expected": "not a url"
+    },
+    {
+      "id": "redactUrl/no-normalization",
+      "requirement": "REDACT-025",
+      "op": "redactUrl",
+      "input": {
+        "url": "https://api.example:443/v1/foo?a=1&password=hunter2hunter2"
+      },
+      "expected": "https://api.example:443/v1/foo?a=1&password=%3CREDACTED%3A14%3Ater2%3E",
+      "note": "The default port SURVIVES. Nothing outside the matched values may change, so there is no URL round trip to normalize it away - which is also the only reason a Python or Go port can match us without reimplementing WHATWG."
+    },
+    {
+      "id": "redactUrl/plus-in-query",
+      "requirement": "REDACT-029",
+      "op": "redactUrl",
+      "input": {
+        "url": "https://api.example/s?q=a+b&secret=abcdefghij"
+      },
+      "expected": "https://api.example/s?q=a+b&secret=%3CREDACTED%3A10%3Aghij%3E",
+      "note": "'+' decodes to a space when reading a value, and untouched params keep their bytes exactly."
+    },
+    {
+      "id": "redactUrl/repeated-param",
+      "requirement": "REDACT-027",
+      "op": "redactUrl",
+      "input": {
+        "url": "https://api.example/s?token=aaaaaaaaaa&token=bbbbbbbbbb"
+      },
+      "expected": "https://api.example/s?token=%3CREDACTED%3A10%3Aaaaa%3E&token=%3CREDACTED%3A10%3Abbbb%3E",
+      "note": "Both params survive and are redacted independently. The old URL round trip collapsed them into one, silently dropping the second value, and re-redacted the first sentinel to <REDACTED:18:aaa>>."
+    },
+    {
+      "id": "redactUrl/empty-value",
+      "requirement": "REDACT-025",
+      "op": "redactUrl",
+      "input": {
+        "url": "https://api.example/s?token="
+      },
+      "expected": "https://api.example/s?token=%3CREDACTED%3A0%3E"
+    },
+    {
+      "id": "redactUrl/valueless-param",
+      "requirement": "REDACT-025",
+      "op": "redactUrl",
+      "input": {
+        "url": "https://api.example/s?token&a=1"
+      },
+      "expected": "https://api.example/s?token&a=1",
+      "note": "A pair with no '=' is not a key/value pair and is left alone."
+    },
+    {
+      "id": "redactUrl/fragment-preserved",
+      "requirement": "REDACT-025",
+      "op": "redactUrl",
+      "input": {
+        "url": "https://api.example/s?token=abcdefghij#section-2"
+      },
+      "expected": "https://api.example/s?token=%3CREDACTED%3A10%3Aghij%3E#section-2"
+    },
+    {
+      "id": "redactUrl/encoded-key",
+      "requirement": "REDACT-029",
+      "op": "redactUrl",
+      "input": {
+        "url": "https://api.example/s?api%5Fkey=abcdefghij"
+      },
+      "expected": "https://api.example/s?api%5Fkey=%3CREDACTED%3A10%3Aghij%3E",
+      "note": "The key is percent-decoded before the denylist test, so an encoded underscore still matches."
+    },
+    {
+      "id": "redactUrl/encoded-value",
+      "requirement": "REDACT-029",
+      "op": "redactUrl",
+      "input": {
+        "url": "https://api.example/s?token=a%20b%2Fc%C3%A9"
+      },
+      "expected": "https://api.example/s?token=%3CREDACTED%3A6%3E",
+      "note": "The sentinel length is of the DECODED value (6 code points), not the encoded text."
+    },
+    {
+      "id": "redactUrl/sentinel-encoding",
+      "requirement": "REDACT-028",
+      "op": "redactUrl",
+      "input": {
+        "url": "https://api.example/s?token=abcdef~-._x"
+      },
+      "expected": "https://api.example/s?token=%3CREDACTED%3A11%3A-._x%3E",
+      "note": "Pins the encode set: unreserved chars in the tail stay literal, everything else is uppercase percent-hex."
+    },
+    {
+      "id": "redactUrl/astral-value",
+      "requirement": "REDACT-029",
+      "op": "redactUrl",
+      "input": {
+        "url": "https://api.example/s?password=🚀+L"
+      },
+      "expected": "https://api.example/s?password=%3CREDACTED%3A3%3E",
+      "note": "Found by differential fuzz. Node's percentDecode indexed UTF-16 code units, so it split the rocket's surrogate pair and turned one emoji into two U+FFFD - reporting length 5 where Python reported 4. Decoding walks code points now."
+    },
+    {
+      "id": "redactUrl/invalid-percent-escape",
+      "requirement": "PRIM-006",
+      "op": "redactUrl",
+      "input": {
+        "url": "https://api.example/s?token=FUY$%D k0"
+      },
+      "expected": "https://api.example/s?token=%3CREDACTED%3A9%3AD%E2%80%89k0%3E",
+      "note": "Found by differential fuzz. '%D' followed by U+2009 is not two hex digits, so the '%' is literal. Python's int(s,16) strips Unicode whitespace and decoded it as a byte; the digits must be validated explicitly."
+    },
+    {
+      "id": "redactUrl/no-query",
+      "requirement": "REDACT-025",
+      "op": "redactUrl",
+      "input": {
+        "url": "https://api.example/v1/foo"
+      },
+      "expected": "https://api.example/v1/foo"
+    },
+    {
+      "id": "redactBody/basic",
+      "requirement": "REDACT-022",
+      "op": "redactBody",
+      "input": {
+        "body": "{\"username\":\"jane\",\"password\":\"hunter2hunter2\",\"cc_number\":\"4111111111111111\"}",
+        "contentType": "application/json"
+      },
+      "expected": "{\"username\":\"jane\",\"password\":\"<REDACTED:14:ter2>\",\"cc_number\":\"<REDACTED:16:1111>\"}",
+      "compare": "json"
+    },
+    {
+      "id": "redactBody/name-normalization",
+      "requirement": "REDACT-010",
+      "op": "redactBody",
+      "input": {
+        "body": "{\"apiKey\":\"abcdefghijk\",\"api_key\":\"abcdefghijk\",\"API-Key\":\"abcdefghijk\",\"APIKEY\":\"abcdefghijk\"}",
+        "contentType": "application/json"
+      },
+      "expected": "{\"apiKey\":\"<REDACTED:11:hijk>\",\"api_key\":\"<REDACTED:11:hijk>\",\"API-Key\":\"<REDACTED:11:hijk>\",\"APIKEY\":\"<REDACTED:11:hijk>\"}",
+      "compare": "json"
+    },
+    {
+      "id": "redactBody/nested-and-arrays",
+      "requirement": "REDACT-022",
+      "op": "redactBody",
+      "input": {
+        "body": "{\"user\":{\"name\":\"jane\",\"password\":\"hunter2hunter2\"},\"auths\":[{\"token\":\"tk_abcdef123\"}]}",
+        "contentType": "application/json"
+      },
+      "expected": "{\"user\":{\"name\":\"jane\",\"password\":\"<REDACTED:14:ter2>\"},\"auths\":[{\"token\":\"<REDACTED:12:f123>\"}]}",
+      "compare": "json"
+    },
+    {
+      "id": "redactBody/non-string-secret",
+      "requirement": "REDACT-004",
+      "op": "redactBody",
+      "input": {
+        "body": "{\"password\":12345,\"token\":null,\"secret\":{\"a\":1}}",
+        "contentType": "application/json"
+      },
+      "expected": "{\"password\":\"<REDACTED>\",\"token\":null,\"secret\":\"<REDACTED>\"}",
+      "compare": "json"
+    },
+    {
+      "id": "redactBody/passthrough-no-secrets",
+      "requirement": "REDACT-020",
+      "op": "redactBody",
+      "input": {
+        "body": "{ \"a\" : 1.0, \"b\" : [ 1, 2 ] }",
+        "contentType": "application/json"
+      },
+      "expected": "{ \"a\" : 1.0, \"b\" : [ 1, 2 ] }",
+      "note": "No denylisted key anywhere, so the ORIGINAL string comes back byte for byte: whitespace intact, 1.0 still 1.0. Compared exactly, not JSON-normalized."
+    },
+    {
+      "id": "redactBody/passthrough-preserves-int64",
+      "requirement": "REDACT-020",
+      "op": "redactBody",
+      "input": {
+        "body": "{\"id\":9007199254740993,\"big\":123456789012345678901234567890}",
+        "contentType": "application/json"
+      },
+      "expected": "{\"id\":9007199254740993,\"big\":123456789012345678901234567890}",
+      "note": "The bug this rule fixes. A parse/serialize round trip in JS turns 9007199254740993 into ...992. Passthrough keeps it exact."
+    },
+    {
+      "id": "redactBody/passthrough-preserves-key-order",
+      "requirement": "REDACT-020",
+      "op": "redactBody",
+      "input": {
+        "body": "{\"z\":1,\"a\":2,\"m\":3}",
+        "contentType": "application/json"
+      },
+      "expected": "{\"z\":1,\"a\":2,\"m\":3}",
+      "note": "Also removes the Go encoding/json key-sorting divergence for every body with nothing to redact."
+    },
+    {
+      "id": "redactBody/reserialize-when-secret-present",
+      "requirement": "REDACT-022",
+      "op": "redactBody",
+      "input": {
+        "body": "{ \"id\" : 42 , \"password\" : \"hunter2hunter2\" }",
+        "contentType": "application/json"
+      },
+      "expected": "{\"id\":42,\"password\":\"<REDACTED:14:ter2>\"}",
+      "compare": "json",
+      "note": "Once something must be rewritten, re-serialization is unavoidable: compact separators, key order preserved."
+    },
+    {
+      "id": "redactBody/unicode-not-escaped",
+      "requirement": "PRIM-032",
+      "op": "redactBody",
+      "input": {
+        "body": "{\"name\":\"café 日本\",\"token\":\"abcdefghij\"}",
+        "contentType": "application/json"
+      },
+      "expected": "{\"name\":\"café 日本\",\"token\":\"<REDACTED:10:ghij>\"}",
+      "compare": "json"
+    },
+    {
+      "id": "redactBody/non-json-content-type",
+      "requirement": "REDACT-023",
+      "op": "redactBody",
+      "input": {
+        "body": "{\"password\":\"hunter2hunter2\"}",
+        "contentType": "text/plain"
+      },
+      "expected": "{\"password\":\"hunter2hunter2\"}",
+      "note": "Content type gates redaction entirely. A JSON-shaped body under text/plain is untouched."
+    },
+    {
+      "id": "redactBody/content-type-with-charset",
+      "requirement": "REDACT-023",
+      "op": "redactBody",
+      "input": {
+        "body": "{\"password\":\"hunter2hunter2\"}",
+        "contentType": "application/json; charset=utf-8"
+      },
+      "expected": "{\"password\":\"<REDACTED:14:ter2>\"}",
+      "compare": "json"
+    },
+    {
+      "id": "redactBody/unparseable",
+      "requirement": "REDACT-024",
+      "op": "redactBody",
+      "input": {
+        "body": "{not json",
+        "contentType": "application/json"
+      },
+      "expected": "{not json"
+    },
+    {
+      "id": "redactBody/empty",
+      "requirement": "REDACT-024",
+      "op": "redactBody",
+      "input": {
+        "body": "",
+        "contentType": "application/json"
+      },
+      "expected": ""
+    },
+    {
+      "id": "redactBody/scalar-root",
+      "requirement": "REDACT-020",
+      "op": "redactBody",
+      "input": {
+        "body": "\"just a string\"",
+        "contentType": "application/json"
+      },
+      "expected": "\"just a string\""
+    },
+    {
+      "id": "redactBody/array-root-with-secret",
+      "requirement": "REDACT-021",
+      "op": "redactBody",
+      "input": {
+        "body": "[{\"token\":\"abcdefghij\"},{\"ok\":1}]",
+        "contentType": "application/json"
+      },
+      "expected": "[{\"token\":\"<REDACTED:10:ghij>\"},{\"ok\":1}]",
+      "compare": "json",
+      "note": "The denied-key walk descends through arrays at the root."
+    },
+    {
+      "id": "redactBody/deeply-nested-secret",
+      "requirement": "REDACT-021",
+      "op": "redactBody",
+      "input": {
+        "body": "{\"a\":{\"b\":{\"c\":{\"d\":{\"password\":\"hunter2hunter2\"}}}}}",
+        "contentType": "application/json"
+      },
+      "expected": "{\"a\":{\"b\":{\"c\":{\"d\":{\"password\":\"<REDACTED:14:ter2>\"}}}}}",
+      "compare": "json"
+    },
+    {
+      "id": "redactBody/unicode-fold-kelvin",
+      "requirement": "REDACT-010",
+      "op": "redactBody",
+      "input": {
+        "body": "{\"toKen\":\"supersecretvalue\"}",
+        "contentType": "application/json"
+      },
+      "expected": "{\"toKen\":\"<REDACTED:16:alue>\"}",
+      "compare": "json",
+      "note": "SECURITY. The same KELVIN SIGN bypass in a body key. The reference redacts it; every port that implemented the withdrawn ASCII fold leaked the value."
+    },
+    {
+      "id": "redactBody/lone-surrogate",
+      "requirement": "PRIM-034",
+      "op": "redactBody",
+      "input": {
+        "body": "{\"a\":\"\ud83d\",\"token\":\"abcdefghij\"}",
+        "contentType": "application/json"
+      },
+      "expected": "{\"a\":\"\\ud83d\",\"token\":\"<REDACTED:10:ghij>\"}",
+      "note": "Found by differential fuzz. A lone surrogate has no UTF-8 encoding, so it must be re-emitted as a \\uXXXX escape. Python's ensure_ascii=False wrote the raw character and produced a string that could not be encoded at all."
+    },
+    {
+      "id": "redactBody/extra-denylist",
+      "requirement": "REDACT-015",
+      "op": "redactBody",
+      "input": {
+        "body": "{\"mySecretField\":\"verylongsecret123\"}",
+        "contentType": "application/json",
+        "extra": [
+          "mySecretField"
+        ]
+      },
+      "expected": "{\"mySecretField\":\"<REDACTED:17:t123>\"}",
+      "compare": "json"
+    },
+    {
+      "id": "truncateBody/under-limit",
+      "requirement": "REDACT-030",
+      "op": "truncateBody",
+      "input": {
+        "body": "short",
+        "maxBytes": 100
+      },
+      "expected": "short"
+    },
+    {
+      "id": "truncateBody/exactly-at-limit",
+      "requirement": "REDACT-030",
+      "op": "truncateBody",
+      "input": {
+        "body": "0123456789",
+        "maxBytes": 10
+      },
+      "expected": "0123456789",
+      "note": "<= the limit passes through untouched."
+    },
+    {
+      "id": "truncateBody/one-over",
+      "requirement": "REDACT-030",
+      "op": "truncateBody",
+      "input": {
+        "body": "0123456789A",
+        "maxBytes": 10
+      },
+      "expected": "0123456789\n[...TRUNCATED: original 11 bytes]"
+    },
+    {
+      "id": "truncateBody/multibyte-boundary",
+      "requirement": "REDACT-031",
+      "op": "truncateBody",
+      "input": {
+        "body": "aé日🚀aé日🚀aé日🚀",
+        "maxBytes": 12
+      },
+      "expected": "aé日🚀a\n[...TRUNCATED: original 30 bytes]",
+      "note": "The cut lands mid-character. Backing off must yield a well-formed prefix, never a broken sequence or a lone surrogate."
+    },
+    {
+      "id": "truncateBody/cut-inside-emoji",
+      "requirement": "REDACT-031",
+      "op": "truncateBody",
+      "input": {
+        "body": "🚀🚀🚀🚀",
+        "maxBytes": 6
+      },
+      "expected": "🚀\n[...TRUNCATED: original 16 bytes]",
+      "note": "6 bytes is one and a half rockets. The kept prefix must be one rocket."
+    },
+    {
+      "id": "truncateBody/original-length-is-bytes",
+      "requirement": "REDACT-032",
+      "op": "truncateBody",
+      "input": {
+        "body": "日本語日本語日本語日本語",
+        "maxBytes": 9
+      },
+      "expected": "日本語\n[...TRUNCATED: original 36 bytes]",
+      "note": "The reported original length is UTF-8 bytes (36), not characters (12)."
+    },
+    {
+      "id": "truncateBody/empty",
+      "requirement": "REDACT-030",
+      "op": "truncateBody",
+      "input": {
+        "body": "",
+        "maxBytes": 10
+      },
+      "expected": ""
+    },
+    {
+      "id": "truncateBody/null",
+      "requirement": "REDACT-030",
+      "op": "truncateBody",
+      "input": {
+        "body": null,
+        "maxBytes": 10
+      },
+      "expected": null
+    }
+  ]
+}
