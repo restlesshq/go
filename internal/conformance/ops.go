@@ -172,7 +172,7 @@ func opFingerprint(in map[string]any) (any, error) {
 		ResponseBody:    in["responseBody"],
 		StackTrace:      stack,
 	})
-	// FP-003: `reason` is prose, not contract surface.
+	// Only strategy and key: `reason` is not contract surface (FP-003).
 	return map[string]string{"strategy": fp.Strategy, "key": fp.Key}, nil
 }
 

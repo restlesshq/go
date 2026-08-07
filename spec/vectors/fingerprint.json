@@ -383,9 +383,9 @@
       },
       "expected": {
         "strategy": "stack",
-        "key": "500:app/src/db/users.js:findById"
+        "key": "500:src/db/users.js:findById"
       },
-      "note": "KNOWN DEFECT, pinned deliberately. This SHOULD produce the same key as fp/stack-basic - that is the whole point of FP-042 - but it does not, because the leftmost project-dir match means a deploy root named /app is itself the match. See FP-042's Known defect note; fixing it moves stored fingerprints and needs coordination."
+      "note": "Same key as fp/stack-basic, which is the whole point of FP-042: a different absolute prefix must not change the fingerprint. Was broken until FP-042 switched from first-match to last-match."
     },
     {
       "id": "fp/stack-skips-vendor",
@@ -785,8 +785,8 @@
       "input": {
         "file": "/srv/app/src/db/users.js"
       },
-      "expected": "app/src/db/users.js",
-      "note": "KNOWN DEFECT, pinned deliberately: this returns app/src/db/users.js, NOT src/db/users.js, so it does not match path/src. Docker WORKDIR /app and Heroku both root at /app, so production and laptop fingerprints diverge for the same file. See FP-042."
+      "expected": "src/db/users.js",
+      "note": "Must equal path/src. A first-match rule returns app/src/db/users.js here, because the deploy root IS the first project dir."
     },
     {
       "id": "path/docker-root",
@@ -795,8 +795,8 @@
       "input": {
         "file": "/app/src/db/users.js"
       },
-      "expected": "app/src/db/users.js",
-      "note": "The single most common containerized layout, and the one the defect bites hardest."
+      "expected": "src/db/users.js",
+      "note": "Docker WORKDIR /app, the most common containerized layout there is, and the one a first-match rule breaks hardest."
     },
     {
       "id": "path/lib",
@@ -863,14 +863,14 @@
       "note": "Falls back to the last two path components."
     },
     {
-      "id": "path/leftmost-wins",
+      "id": "path/nested-collapses-to-last",
       "requirement": "FP-042",
       "op": "projectRelative",
       "input": {
         "file": "/a/src/b/src/c.js"
       },
-      "expected": "src/b/src/c.js",
-      "note": "The FIRST project-dir match wins, not the last."
+      "expected": "src/c.js",
+      "note": "The LAST project-dir match wins. Collapsing further than a first-match rule is the accepted trade for machine independence."
     },
     {
       "id": "path/bare-filename",

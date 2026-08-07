@@ -79,22 +79,31 @@ func TestProjectRelativeStripsMachinePrefix(t *testing.T) {
 	}
 }
 
-func TestProjectRelativeMatchesReferenceOnAppRoot(t *testing.T) {
-	// Pins the CURRENT reference behaviour, defect included. This SDK's job
-	// is to agree with the reference, so it must reproduce this exactly.
-	//
-	// The defect: a deployment root named /app becomes the leftmost match and
-	// survives into the key, so a container build and a laptop produce
-	// DIFFERENT fingerprints for the same file. See the Known defect note
-	// under FP-042; fixing it moves stored keys and needs coordination.
-	if got := restless.ProjectRelative("/app/src/db/users.go"); got != "app/src/db/users.go" {
-		t.Errorf("got %q, want app/src/db/users.go (matching the reference)", got)
+func TestProjectRelativeTakesTheLastProjectDir(t *testing.T) {
+	// FP-042 takes the LAST project dir, not the first, and this is the case
+	// the distinction exists for: Docker's conventional WORKDIR /app and
+	// Heroku both root the deployment at /app. Under a first-match rule the
+	// deploy root IS the match and survives into the key, so a container
+	// build and a laptop produce DIFFERENT fingerprints for the same file,
+	// which defeats the only thing the requirement is for.
+	if got := restless.ProjectRelative("/app/src/db/users.go"); got != "src/db/users.go" {
+		t.Errorf("got %q, want src/db/users.go", got)
 	}
 	laptop := restless.ProjectRelative("/Users/dev/proj/src/db/users.go")
 	docker := restless.ProjectRelative("/app/src/db/users.go")
-	if laptop == docker {
-		t.Log("laptop and Docker paths now agree - the FP-042 defect looks fixed " +
-			"upstream; update this test and CONFORMANCE.md")
+	render := restless.ProjectRelative("/opt/render/project/src/db/users.go")
+	if laptop != docker || laptop != render {
+		t.Errorf("same file, different keys: laptop=%q docker=%q render=%q",
+			laptop, docker, render)
+	}
+}
+
+func TestProjectRelativeNestedLayoutCollapses(t *testing.T) {
+	// The accepted trade for last-match: a nested project dir collapses to
+	// the innermost one. Far rarer than an /app root, and the result is
+	// still machine-independent, which is the property being protected.
+	if got := restless.ProjectRelative("/a/src/b/src/c.go"); got != "src/c.go" {
+		t.Errorf("got %q, want src/c.go", got)
 	}
 }
 

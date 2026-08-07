@@ -196,9 +196,12 @@ func (u *Uploader) Flush() {
 	var fingerprints []string
 	seen := map[string]bool{}
 	for _, c := range batch {
-		if c.ErrorFingerprint != nil && c.ErrorFingerprint.Key != "" && !seen[c.ErrorFingerprint.Key] {
-			seen[c.ErrorFingerprint.Key] = true
-			fingerprints = append(fingerprints, c.ErrorFingerprint.Key)
+		if c.ErrorFingerprint == nil {
+			continue
+		}
+		if key := c.ErrorFingerprint.Key; key != "" && !seen[key] {
+			seen[key] = true
+			fingerprints = append(fingerprints, key)
 		}
 	}
 

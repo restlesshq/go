@@ -79,8 +79,17 @@ var (
 	reWSRun       = regexp.MustCompile(`[` + wsClass + `]+`)
 )
 
-// FP-042
-var projectDirPattern = regexp.MustCompile(`/(?:src|lib|app|api|routes|controllers|handlers)/.+$`)
+// FP-042. A segment scan rather than a regex: the requirement is "the LAST
+// of these segments", and RE2 has no lookahead to express that in one pass.
+var projectDirs = map[string]bool{
+	"src":         true,
+	"lib":         true,
+	"app":         true,
+	"api":         true,
+	"routes":      true,
+	"controllers": true,
+	"handlers":    true,
+}
 
 // FP-044. Go stack frames from runtime/debug.Stack() look like:
 //
@@ -186,12 +195,35 @@ func readBodyCode(body any) (string, bool) {
 	return "", false
 }
 
-// ProjectRelative makes a source path machine-independent (FP-042).
+// ProjectRelative strips the machine-specific path prefix down to a
+// project-relative path, so the same source file fingerprints identically on
+// a laptop and in production (FP-042).
+//
+// Takes the LAST project directory in the path, not the first. The
+// difference is the whole point:
+//
+//	/Users/dev/proj/src/db/users.go     -> src/db/users.go
+//	/app/src/db/users.go                -> src/db/users.go
+//	/opt/render/project/src/db/users.go -> src/db/users.go
+//
+// A first-match rule returns app/src/db/users.go for the middle one, because
+// the deployment root IS the first project dir. Docker's conventional
+// WORKDIR /app and Heroku both root there, so first-match made production
+// disagree with development for a large share of deployments, defeating the
+// only thing this function exists to do.
+//
+// The trade-off is that a nested layout (/proj/src/a/src/x.go) collapses to
+// src/x.go rather than src/a/src/x.go. That is much rarer than an /app root,
+// and still machine-independent, which is the property that matters.
 func ProjectRelative(file string) string {
-	if m := projectDirPattern.FindString(file); m != "" {
-		return m[1:]
-	}
 	parts := strings.Split(file, "/")
+	// Stop before the final component: a project dir has to have something
+	// after it to be a directory at all.
+	for i := len(parts) - 2; i >= 0; i-- {
+		if projectDirs[parts[i]] {
+			return strings.Join(parts[i:], "/")
+		}
+	}
 	if len(parts) <= 2 {
 		return strings.Join(parts, "/")
 	}

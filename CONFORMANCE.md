@@ -43,6 +43,9 @@ The 8 skips are cases outside this implementation's dialect, not gaps:
   rather than guess. Covered natively in `stack_test.go`.
 - 1 `redactBody/lone-surrogate` case. See the exemption below.
 
+FP-042 is explicitly NOT dialect-exempt and is verified here through the
+`projectRelative` op, which takes an already-extracted path.
+
 ## Go-specific decisions
 
 Each of these is a place where the obvious Go code silently disagrees with
@@ -59,6 +62,7 @@ the reference. They are the reason this SDK is byte-compatible.
 | PRIM-040 | Hand-built timestamp. `time.RFC3339Nano` emits nanoseconds and strips trailing zeros, so the digit count would vary per request. |
 | REDACT-028 | `net/url.QueryEscape` uses a different safe set and turns a space into `+`. The unreserved set is spelled out. |
 | BATCH-008 | Test detection keys on the `.test` binary suffix and `-test.*` flags. |
+| FP-042 | "The LAST project dir" is a segment scan, not a regex. RE2 has no lookahead to express a rightmost match in one pass, and the loop is clearer than a reversed pattern would be anyway. |
 | FP-043 | Go's `debug.Stack()` is innermost-FIRST, like v8 and unlike a Python traceback, so the walk goes forwards. |
 | FP-044 | Frames are `func\n\tfile.go:line`. Stdlib frames are skipped via `runtime.GOROOT()` rather than a hardcoded path, and the SDK's own frames by package prefix *with* the trailing separator (without it, `github.com/restlesshq/go` also matches `..._test`). |
 | CACHE-* | Every cache is mutex-guarded. Go serves requests on many goroutines, so an unsynchronized map is not a theoretical race - the runtime aborts the process. |
@@ -74,12 +78,3 @@ Per PRIM-035 the SDK never raises on such input and substitutes U+FFFD. The
 conformance driver reports `unsupported` for any input LINE containing a
 lone surrogate escape, because the limitation is at the transport layer
 rather than in redaction.
-
-## Known deviation from intent
-
-`ProjectRelative` reproduces a defect in the reference (see the Known defect
-note under FP-042): a deployment root named `/app` - Docker `WORKDIR /app`,
-Heroku - survives into the fingerprint key, so production and laptop
-fingerprints differ for the same file. This SDK matches the reference
-deliberately; `stack_test.go` logs a notice if the two ever start agreeing,
-so the divergence surfaces the moment the reference is fixed.
