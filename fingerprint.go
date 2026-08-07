@@ -28,24 +28,6 @@ type Fingerprint struct {
 	// Reason is human-facing prose and explicitly NOT contract surface
 	// (FP-003); it is never compared for conformance.
 	Reason string `json:"reason"`
-	// PreviousKey is TRANSITIONAL (FP-047): the key the ladder would have
-	// produced if the `stack` strategy had not fired. Set only by that
-	// strategy.
-	//
-	// Until the adapters started capturing panics, StackTrace was never
-	// populated, so the `stack` strategy never ran and every uncaught 5xx
-	// fell through to `message` (or `route-only`). Turning it on is a strict
-	// improvement - prose keys split when an error message is reworded and
-	// collide when two unrelated bugs read alike - but it MOVES the key, and
-	// a moved key silently orphans the Agent Recovery message attached to it.
-	//
-	// So the SDK ships both. Both are uploaded, so the ingest can answer for
-	// either, and Engine.LookupRecoveryFor falls back to this one, which
-	// keeps an existing recovery message working while the group migrates.
-	//
-	// Remove once no project has a recovery message attached to a 5xx
-	// `message`-strategy group. See spec/CONTRACT.md FP-047.
-	PreviousKey string `json:"previousKey,omitempty"`
 }
 
 // CapturedError is the input to Fingerprint computation.
@@ -460,10 +442,6 @@ func ComputeFingerprint(err CapturedError) Fingerprint {
 				Strategy: "stack",
 				Key:      fmt.Sprintf("%d:%s:%s", err.Status, file, fn),
 				Reason:   fmt.Sprintf("top user frame: %s in %s", fn, file),
-				// FP-047. What this error keyed on before the stack strategy
-				// became reachable, so an already-attached recovery message
-				// survives the move.
-				PreviousKey: fallbackKey(err.Status, method, err),
 			}
 		}
 	}
@@ -482,28 +460,4 @@ func ComputeFingerprint(err CapturedError) Fingerprint {
 		Key:      fmt.Sprintf("%d:%s:%s", err.Status, method, route),
 		Reason:   "no usable code or message; falling back to status + route",
 	}
-}
-
-// fallbackKey is the key the last two rungs of the ladder produce. Factored
-// out so the stack strategy can report what it displaced (FP-047) without
-// duplicating the logic it would otherwise have run.
-// FallbackKey is fallbackKey exported for the conformance driver. FP-047's
-// derivation has to be verifiable dialect-free: every vector that reaches it
-// through ComputeFingerprint carries a v8-shaped stack, which this SDK skips
-// under FP-046, so without a direct op the string would be pinned by shared
-// vectors only in the reference.
-func FallbackKey(err CapturedError) string {
-	method := err.Method
-	if method == "" {
-		method = "GET"
-	}
-	return fallbackKey(err.Status, method, err)
-}
-
-func fallbackKey(status int, method string, err CapturedError) string {
-	route := NormalizeRoute(err.Route)
-	if msg := NormalizeMessage(extractMessage(err.ResponseBody)); msg != "" {
-		return fmt.Sprintf("%d:%s:%s:%s", status, method, route, msg)
-	}
-	return fmt.Sprintf("%d:%s:%s", status, method, route)
 }

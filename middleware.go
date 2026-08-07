@@ -275,9 +275,10 @@ func (rec *responseRecorder) finish(
 			ResponseHeaders: resHeaders,
 			ResponseBody:    rawBody,
 		})
-		// Honours the transitional previous key (FP-047), so an existing
-		// recovery message keeps being injected across the strategy change.
-		recovery := rec.engine.LookupRecoveryFor(fingerprint)
+		recovery := ""
+		if fingerprint != nil {
+			recovery = rec.engine.LookupRecovery(fingerprint.Key)
+		}
 		injection := BuildDebugInjection(
 			rec.status, rec.rawID, rec.engine.BaseURL(), rec.engine.RequestIDPrefix(),
 			recovery, rec.method, rec.route, rec.engine.DocsURL())

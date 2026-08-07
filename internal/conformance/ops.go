@@ -119,15 +119,6 @@ func Dispatch(op string, in map[string]any) (any, error) {
 		return restless.NormalizeMessage(str(in, "message")), nil
 	case "projectRelative":
 		return restless.ProjectRelative(str(in, "file")), nil
-	// FP-047's derivation, dialect-free: every case reaching it through
-	// `fingerprint` carries a v8 stack this SDK must skip (FP-046).
-	case "fallbackKey":
-		return restless.FallbackKey(restless.CapturedError{
-			Status:       num(in, "status"),
-			Method:       str(in, "method"),
-			Route:        str(in, "route"),
-			ResponseBody: in["responseBody"],
-		}), nil
 
 	case "formatRequestId":
 		return restless.FormatRequestID(str(in, "rawId"), str(in, "prefix")), nil
@@ -181,14 +172,7 @@ func opFingerprint(in map[string]any) (any, error) {
 		ResponseBody:    in["responseBody"],
 		StackTrace:      stack,
 	})
-	// FP-047's previousKey IS contract surface; `reason` is not (FP-003).
-	if fp.PreviousKey != "" {
-		return map[string]string{
-			"strategy":    fp.Strategy,
-			"key":         fp.Key,
-			"previousKey": fp.PreviousKey,
-		}, nil
-	}
+	// Only strategy and key: `reason` is not contract surface (FP-003).
 	return map[string]string{"strategy": fp.Strategy, "key": fp.Key}, nil
 }
 

@@ -141,27 +141,6 @@ func (e *Engine) LookupRecovery(fingerprintKey string) string {
 	return e.RecoveryCache.Lookup(fingerprintKey)
 }
 
-// LookupRecoveryFor is the recovery lookup for a whole fingerprint,
-// honouring the transitional previous key (FP-047).
-//
-// Prefers the current key, so a message attached to the new group wins as
-// soon as one exists, and falls back to the key this error used before the
-// stack strategy became reachable. Without the fallback, turning that
-// strategy on would silently stop injecting guidance a customer had already
-// written, with nothing anywhere to indicate it.
-func (e *Engine) LookupRecoveryFor(fingerprint *Fingerprint) string {
-	if fingerprint == nil {
-		return ""
-	}
-	if msg := e.LookupRecovery(fingerprint.Key); msg != "" {
-		return msg
-	}
-	if fingerprint.PreviousKey == "" {
-		return ""
-	}
-	return e.LookupRecovery(fingerprint.PreviousKey)
-}
-
 // Resolve runs the user's setup callback and applies the enrich cache
 // (SETUP-001..005, CACHE-001..007, SAFETY-002).
 func (e *Engine) Resolve(info *RequestInfo) (result resolvedSetup) {

@@ -32,19 +32,17 @@ node ../node-sdk/spec/harness/fuzz.mjs \
   --iterations 20000
 ```
 
-Current status: **208 vectors, 199 passed, 0 failed, 9 skipped.** Zero
+Current status: **206 vectors, 198 passed, 0 failed, 8 skipped.** Zero
 divergence across ~28,000 fuzz comparisons on four seeds (24301, 90210, 7,
 1337).
 
-The 9 skips are cases outside this implementation's dialect, not gaps:
+The 8 skips are cases outside this implementation's dialect, not gaps:
 
-- 8 `fp/stack-*` cases feed a v8-shaped stack into `fingerprint`. FP-044
+- 7 `fp/stack-*` cases feed a v8-shaped stack into `fingerprint`. FP-044
   makes frame parsing per-language and FP-046 requires the driver to say so
   rather than guess. Covered natively in `stack_test.go`.
 - 1 `redactBody/lone-surrogate` case. See the exemption below.
 
-`fp/stack-carries-previous-key` is the eighth of those; it is a v8 stack like
-the rest, so FP-047's output is pinned in `middleware_test.go` instead.
 FP-042 is explicitly NOT dialect-exempt and is verified here through the
 `projectRelative` op, which takes an already-extracted path.
 
@@ -80,9 +78,3 @@ Per PRIM-035 the SDK never raises on such input and substitutes U+FFFD. The
 conformance driver reports `unsupported` for any input LINE containing a
 lone surrogate escape, because the limitation is at the transport layer
 rather than in redaction.
-
-## Optional requirements
-
-| Contract | Status |
-|---|---|
-| FP-047 (SHOULD, transitional) | **Implemented.** A `stack` fingerprint carries `PreviousKey`, the key the ladder would have produced without it. Both keys go up in the batch's fingerprint list, so the ingest can answer for either, and `Engine.LookupRecoveryFor` prefers the current key and falls back to the previous one. Without it, making the stack strategy reachable would move the key for every uncaught 5xx and silently orphan the Agent Recovery message attached to the old one. Remove once no project has a recovery message on a 5xx `message`-strategy group. |

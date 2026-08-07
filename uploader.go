@@ -199,14 +199,9 @@ func (u *Uploader) Flush() {
 		if c.ErrorFingerprint == nil {
 			continue
 		}
-		// Both keys, so the server can answer for either. FP-047: a project
-		// whose recovery message is still attached to the pre-stack-strategy
-		// key keeps getting it until the group migrates.
-		for _, key := range []string{c.ErrorFingerprint.Key, c.ErrorFingerprint.PreviousKey} {
-			if key != "" && !seen[key] {
-				seen[key] = true
-				fingerprints = append(fingerprints, key)
-			}
+		if key := c.ErrorFingerprint.Key; key != "" && !seen[key] {
+			seen[key] = true
+			fingerprints = append(fingerprints, key)
 		}
 	}
 
