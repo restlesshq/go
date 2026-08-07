@@ -196,9 +196,17 @@ func (u *Uploader) Flush() {
 	var fingerprints []string
 	seen := map[string]bool{}
 	for _, c := range batch {
-		if c.ErrorFingerprint != nil && c.ErrorFingerprint.Key != "" && !seen[c.ErrorFingerprint.Key] {
-			seen[c.ErrorFingerprint.Key] = true
-			fingerprints = append(fingerprints, c.ErrorFingerprint.Key)
+		if c.ErrorFingerprint == nil {
+			continue
+		}
+		// Both keys, so the server can answer for either. FP-047: a project
+		// whose recovery message is still attached to the pre-stack-strategy
+		// key keeps getting it until the group migrates.
+		for _, key := range []string{c.ErrorFingerprint.Key, c.ErrorFingerprint.PreviousKey} {
+			if key != "" && !seen[key] {
+				seen[key] = true
+				fingerprints = append(fingerprints, key)
+			}
 		}
 	}
 

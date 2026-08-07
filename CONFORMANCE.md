@@ -32,16 +32,21 @@ node ../node-sdk/spec/harness/fuzz.mjs \
   --iterations 20000
 ```
 
-Current status: **206 vectors, 198 passed, 0 failed, 8 skipped.** Zero
+Current status: **208 vectors, 199 passed, 0 failed, 9 skipped.** Zero
 divergence across ~28,000 fuzz comparisons on four seeds (24301, 90210, 7,
 1337).
 
-The 8 skips are cases outside this implementation's dialect, not gaps:
+The 9 skips are cases outside this implementation's dialect, not gaps:
 
-- 7 `fp/stack-*` cases feed a v8-shaped stack into `fingerprint`. FP-044
+- 8 `fp/stack-*` cases feed a v8-shaped stack into `fingerprint`. FP-044
   makes frame parsing per-language and FP-046 requires the driver to say so
   rather than guess. Covered natively in `stack_test.go`.
 - 1 `redactBody/lone-surrogate` case. See the exemption below.
+
+`fp/stack-carries-previous-key` is the eighth of those; it is a v8 stack like
+the rest, so FP-047's output is pinned in `middleware_test.go` instead.
+FP-042 is explicitly NOT dialect-exempt and is verified here through the
+`projectRelative` op, which takes an already-extracted path.
 
 ## Go-specific decisions
 
@@ -59,6 +64,7 @@ the reference. They are the reason this SDK is byte-compatible.
 | PRIM-040 | Hand-built timestamp. `time.RFC3339Nano` emits nanoseconds and strips trailing zeros, so the digit count would vary per request. |
 | REDACT-028 | `net/url.QueryEscape` uses a different safe set and turns a space into `+`. The unreserved set is spelled out. |
 | BATCH-008 | Test detection keys on the `.test` binary suffix and `-test.*` flags. |
+| FP-042 | "The LAST project dir" is a segment scan, not a regex. RE2 has no lookahead to express a rightmost match in one pass, and the loop is clearer than a reversed pattern would be anyway. |
 | FP-043 | Go's `debug.Stack()` is innermost-FIRST, like v8 and unlike a Python traceback, so the walk goes forwards. |
 | FP-044 | Frames are `func\n\tfile.go:line`. Stdlib frames are skipped via `runtime.GOROOT()` rather than a hardcoded path, and the SDK's own frames by package prefix *with* the trailing separator (without it, `github.com/restlesshq/go` also matches `..._test`). |
 | CACHE-* | Every cache is mutex-guarded. Go serves requests on many goroutines, so an unsynchronized map is not a theoretical race - the runtime aborts the process. |
@@ -75,11 +81,8 @@ conformance driver reports `unsupported` for any input LINE containing a
 lone surrogate escape, because the limitation is at the transport layer
 rather than in redaction.
 
-## Known deviation from intent
+## Optional requirements
 
-`ProjectRelative` reproduces a defect in the reference (see the Known defect
-note under FP-042): a deployment root named `/app` - Docker `WORKDIR /app`,
-Heroku - survives into the fingerprint key, so production and laptop
-fingerprints differ for the same file. This SDK matches the reference
-deliberately; `stack_test.go` logs a notice if the two ever start agreeing,
-so the divergence surfaces the moment the reference is fixed.
+| Contract | Status |
+|---|---|
+| FP-047 (SHOULD, transitional) | **Implemented.** A `stack` fingerprint carries `PreviousKey`, the key the ladder would have produced without it. Both keys go up in the batch's fingerprint list, so the ingest can answer for either, and `Engine.LookupRecoveryFor` prefers the current key and falls back to the previous one. Without it, making the stack strategy reachable would move the key for every uncaught 5xx and silently orphan the Agent Recovery message attached to the old one. Remove once no project has a recovery message on a 5xx `message`-strategy group. |

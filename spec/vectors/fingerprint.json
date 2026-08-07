@@ -368,7 +368,8 @@
       },
       "expected": {
         "strategy": "stack",
-        "key": "500:src/db/users.js:findById"
+        "key": "500:src/db/users.js:findById",
+        "previousKey": "500:GET:/users"
       }
     },
     {
@@ -383,9 +384,10 @@
       },
       "expected": {
         "strategy": "stack",
-        "key": "500:app/src/db/users.js:findById"
+        "key": "500:src/db/users.js:findById",
+        "previousKey": "500:GET:/users"
       },
-      "note": "KNOWN DEFECT, pinned deliberately. This SHOULD produce the same key as fp/stack-basic - that is the whole point of FP-042 - but it does not, because the leftmost project-dir match means a deploy root named /app is itself the match. See FP-042's Known defect note; fixing it moves stored fingerprints and needs coordination."
+      "note": "Same key as fp/stack-basic, which is the whole point of FP-042: a different absolute prefix must not change the fingerprint. Was broken until FP-042 switched from first-match to last-match."
     },
     {
       "id": "fp/stack-skips-vendor",
@@ -397,7 +399,8 @@
       },
       "expected": {
         "strategy": "stack",
-        "key": "500:src/db/users.js:real"
+        "key": "500:src/db/users.js:real",
+        "previousKey": "500:GET:/"
       }
     },
     {
@@ -410,7 +413,8 @@
       },
       "expected": {
         "strategy": "stack",
-        "key": "500:src/db/users.js:anonymous"
+        "key": "500:src/db/users.js:anonymous",
+        "previousKey": "500:GET:/"
       }
     },
     {
@@ -423,7 +427,8 @@
       },
       "expected": {
         "strategy": "stack",
-        "key": "500:place/thing.js:go"
+        "key": "500:place/thing.js:go",
+        "previousKey": "500:GET:/"
       },
       "note": "No src/lib/app/api/routes/controllers/handlers segment, so fall back to the last two path components."
     },
@@ -440,7 +445,8 @@
       },
       "expected": {
         "strategy": "stack",
-        "key": "500:src/db/users.js:findById"
+        "key": "500:src/db/users.js:findById",
+        "previousKey": "500:GET:/"
       }
     },
     {
@@ -602,6 +608,96 @@
         "strategy": "route-only",
         "key": "503:GET:/"
       }
+    },
+    {
+      "id": "fallback/with-message",
+      "requirement": "FP-047",
+      "op": "fallbackKey",
+      "input": {
+        "status": 500,
+        "method": "POST",
+        "route": "/pets",
+        "responseBody": {
+          "message": "Something came apart"
+        }
+      },
+      "expected": "500:POST:/pets:something-came-apart",
+      "note": "The derivation a stack fingerprint reports as previousKey. Exposed as its own op because every case that reaches it via `fingerprint` carries a v8 stack, which non-v8 SDKs must skip (FP-046) - so without this the string would be pinned only in the reference."
+    },
+    {
+      "id": "fallback/without-message",
+      "requirement": "FP-047",
+      "op": "fallbackKey",
+      "input": {
+        "status": 503,
+        "method": "GET",
+        "route": "/health"
+      },
+      "expected": "503:GET:/health",
+      "note": "No extractable message, so it falls to the route-only shape."
+    },
+    {
+      "id": "fallback/normalizes-route",
+      "requirement": "FP-047",
+      "op": "fallbackKey",
+      "input": {
+        "status": 500,
+        "method": "GET",
+        "route": "/pets/123",
+        "responseBody": {
+          "message": "boom"
+        }
+      },
+      "expected": "500:GET:/pets/:id:boom",
+      "note": "The route is normalized first, so the previous key groups the same way the message strategy did."
+    },
+    {
+      "id": "fallback/no-method-defaults-get",
+      "requirement": "FP-011",
+      "op": "fallbackKey",
+      "input": {
+        "status": 500,
+        "route": "/pets"
+      },
+      "expected": "500:GET:/pets"
+    },
+    {
+      "id": "fp/stack-carries-previous-key",
+      "requirement": "FP-047",
+      "op": "fingerprint",
+      "input": {
+        "status": 500,
+        "method": "POST",
+        "route": "/pets",
+        "responseBody": {
+          "message": "Something came apart"
+        },
+        "stackTrace": "Error: boom\n    at findById (/proj/src/db/users.js:12:34)"
+      },
+      "expected": {
+        "strategy": "stack",
+        "key": "500:src/db/users.js:findById",
+        "previousKey": "500:POST:/pets:something-came-apart"
+      },
+      "note": "The stack strategy displaces the message strategy, so it reports what the key WOULD have been. Without this, turning the stack strategy on silently orphans any Agent Recovery message already attached to the old key."
+    },
+    {
+      "id": "fp/no-previous-key-without-stack",
+      "requirement": "FP-047",
+      "op": "fingerprint",
+      "input": {
+        "status": 500,
+        "method": "POST",
+        "route": "/pets",
+        "responseBody": {
+          "message": "Something came apart"
+        }
+      },
+      "expected": {
+        "strategy": "message",
+        "key": "500:POST:/pets:something-came-apart"
+      },
+      "note": "Nothing was displaced, so there is no previous key to report."
     },
     {
       "id": "route/numeric",
@@ -785,8 +881,8 @@
       "input": {
         "file": "/srv/app/src/db/users.js"
       },
-      "expected": "app/src/db/users.js",
-      "note": "KNOWN DEFECT, pinned deliberately: this returns app/src/db/users.js, NOT src/db/users.js, so it does not match path/src. Docker WORKDIR /app and Heroku both root at /app, so production and laptop fingerprints diverge for the same file. See FP-042."
+      "expected": "src/db/users.js",
+      "note": "Must equal path/src. A first-match rule returns app/src/db/users.js here, because the deploy root IS the first project dir."
     },
     {
       "id": "path/docker-root",
@@ -795,8 +891,8 @@
       "input": {
         "file": "/app/src/db/users.js"
       },
-      "expected": "app/src/db/users.js",
-      "note": "The single most common containerized layout, and the one the defect bites hardest."
+      "expected": "src/db/users.js",
+      "note": "Docker WORKDIR /app, the most common containerized layout there is, and the one a first-match rule breaks hardest."
     },
     {
       "id": "path/lib",
@@ -863,14 +959,14 @@
       "note": "Falls back to the last two path components."
     },
     {
-      "id": "path/leftmost-wins",
+      "id": "path/nested-collapses-to-last",
       "requirement": "FP-042",
       "op": "projectRelative",
       "input": {
         "file": "/a/src/b/src/c.js"
       },
-      "expected": "src/b/src/c.js",
-      "note": "The FIRST project-dir match wins, not the last."
+      "expected": "src/c.js",
+      "note": "The LAST project-dir match wins. Collapsing further than a first-match rule is the accepted trade for machine independence."
     },
     {
       "id": "path/bare-filename",

@@ -71,7 +71,12 @@ apart from a 404 on an endpoint that does not exist.
   blocking the response on a network call.
 - **Panics are captured.** An unhandled panic is logged with its stack (so
   crashes group by the panicking function) and then re-panicked, leaving
-  `net/http`'s own handling exactly as it was.
+  `net/http`'s own handling exactly as it was. The file in that group is cut
+  at the last `src/`, `lib/`, `app/`, `api/`, `routes/`, `controllers/` or
+  `handlers/` segment, so one source file groups identically on your laptop
+  and in a container rooted at `/app`. While panic grouping rolls out, a
+  crash also reports the group it used to land in, so a "next steps" message
+  you already attached keeps being injected.
 - **Blocking.** Return a `Block` from the setup callback to reject a request
   before your handler runs.
 

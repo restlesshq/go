@@ -28,6 +28,24 @@ type Fingerprint struct {
 	// Reason is human-facing prose and explicitly NOT contract surface
 	// (FP-003); it is never compared for conformance.
 	Reason string `json:"reason"`
+	// PreviousKey is TRANSITIONAL (FP-047): the key the ladder would have
+	// produced if the `stack` strategy had not fired. Set only by that
+	// strategy.
+	//
+	// Until the adapters started capturing panics, StackTrace was never
+	// populated, so the `stack` strategy never ran and every uncaught 5xx
+	// fell through to `message` (or `route-only`). Turning it on is a strict
+	// improvement - prose keys split when an error message is reworded and
+	// collide when two unrelated bugs read alike - but it MOVES the key, and
+	// a moved key silently orphans the Agent Recovery message attached to it.
+	//
+	// So the SDK ships both. Both are uploaded, so the ingest can answer for
+	// either, and Engine.LookupRecoveryFor falls back to this one, which
+	// keeps an existing recovery message working while the group migrates.
+	//
+	// Remove once no project has a recovery message attached to a 5xx
+	// `message`-strategy group. See spec/CONTRACT.md FP-047.
+	PreviousKey string `json:"previousKey,omitempty"`
 }
 
 // CapturedError is the input to Fingerprint computation.
@@ -79,8 +97,17 @@ var (
 	reWSRun       = regexp.MustCompile(`[` + wsClass + `]+`)
 )
 
-// FP-042
-var projectDirPattern = regexp.MustCompile(`/(?:src|lib|app|api|routes|controllers|handlers)/.+$`)
+// FP-042. A segment scan rather than a regex: the requirement is "the LAST
+// of these segments", and RE2 has no lookahead to express that in one pass.
+var projectDirs = map[string]bool{
+	"src":         true,
+	"lib":         true,
+	"app":         true,
+	"api":         true,
+	"routes":      true,
+	"controllers": true,
+	"handlers":    true,
+}
 
 // FP-044. Go stack frames from runtime/debug.Stack() look like:
 //
@@ -186,12 +213,35 @@ func readBodyCode(body any) (string, bool) {
 	return "", false
 }
 
-// ProjectRelative makes a source path machine-independent (FP-042).
+// ProjectRelative strips the machine-specific path prefix down to a
+// project-relative path, so the same source file fingerprints identically on
+// a laptop and in production (FP-042).
+//
+// Takes the LAST project directory in the path, not the first. The
+// difference is the whole point:
+//
+//	/Users/dev/proj/src/db/users.go     -> src/db/users.go
+//	/app/src/db/users.go                -> src/db/users.go
+//	/opt/render/project/src/db/users.go -> src/db/users.go
+//
+// A first-match rule returns app/src/db/users.go for the middle one, because
+// the deployment root IS the first project dir. Docker's conventional
+// WORKDIR /app and Heroku both root there, so first-match made production
+// disagree with development for a large share of deployments, defeating the
+// only thing this function exists to do.
+//
+// The trade-off is that a nested layout (/proj/src/a/src/x.go) collapses to
+// src/x.go rather than src/a/src/x.go. That is much rarer than an /app root,
+// and still machine-independent, which is the property that matters.
 func ProjectRelative(file string) string {
-	if m := projectDirPattern.FindString(file); m != "" {
-		return m[1:]
-	}
 	parts := strings.Split(file, "/")
+	// Stop before the final component: a project dir has to have something
+	// after it to be a directory at all.
+	for i := len(parts) - 2; i >= 0; i-- {
+		if projectDirs[parts[i]] {
+			return strings.Join(parts[i:], "/")
+		}
+	}
 	if len(parts) <= 2 {
 		return strings.Join(parts, "/")
 	}
@@ -410,6 +460,10 @@ func ComputeFingerprint(err CapturedError) Fingerprint {
 				Strategy: "stack",
 				Key:      fmt.Sprintf("%d:%s:%s", err.Status, file, fn),
 				Reason:   fmt.Sprintf("top user frame: %s in %s", fn, file),
+				// FP-047. What this error keyed on before the stack strategy
+				// became reachable, so an already-attached recovery message
+				// survives the move.
+				PreviousKey: fallbackKey(err.Status, method, err),
 			}
 		}
 	}
@@ -428,4 +482,28 @@ func ComputeFingerprint(err CapturedError) Fingerprint {
 		Key:      fmt.Sprintf("%d:%s:%s", err.Status, method, route),
 		Reason:   "no usable code or message; falling back to status + route",
 	}
+}
+
+// fallbackKey is the key the last two rungs of the ladder produce. Factored
+// out so the stack strategy can report what it displaced (FP-047) without
+// duplicating the logic it would otherwise have run.
+// FallbackKey is fallbackKey exported for the conformance driver. FP-047's
+// derivation has to be verifiable dialect-free: every vector that reaches it
+// through ComputeFingerprint carries a v8-shaped stack, which this SDK skips
+// under FP-046, so without a direct op the string would be pinned by shared
+// vectors only in the reference.
+func FallbackKey(err CapturedError) string {
+	method := err.Method
+	if method == "" {
+		method = "GET"
+	}
+	return fallbackKey(err.Status, method, err)
+}
+
+func fallbackKey(status int, method string, err CapturedError) string {
+	route := NormalizeRoute(err.Route)
+	if msg := NormalizeMessage(extractMessage(err.ResponseBody)); msg != "" {
+		return fmt.Sprintf("%d:%s:%s:%s", status, method, route, msg)
+	}
+	return fmt.Sprintf("%d:%s:%s", status, method, route)
 }
