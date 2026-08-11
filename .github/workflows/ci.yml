@@ -48,13 +48,14 @@ jobs:
 
       # META-003: an SDK must run the shared harness against its driver.
       # The harness and vectors live in the Node SDK, the reference
-      # implementation. restlesshq/node is public, so the default
-      # GITHUB_TOKEN can check it out even from this private repo.
+      # implementation, so this job checks that repo out rather than keeping
+      # a second copy of them here. Both repos are public, so the default
+      # GITHUB_TOKEN is enough and no secret is involved.
       #
-      # This job stays red until the conformance kit lands on node's main
-      # branch, because spec/ does not exist there yet. The in-process
-      # replay in the `test` job above covers the same vectors meanwhile,
-      # from the pinned copy in spec/.
+      # The `test` job above replays the same vectors in-process from the
+      # pinned copy in spec/, which is what gives a Go developer a contract
+      # failure without needing Node installed. This job is the check that
+      # the pinned copy has not drifted from the reference.
       - name: Check out the reference SDK
         uses: actions/checkout@v4
         with:
