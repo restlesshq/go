@@ -1,5 +1,5 @@
 // Command conformance is the Go conformance driver.
-// See node-sdk/spec/driver/PROTOCOL.md.
+// See sdk/node/spec/driver/PROTOCOL.md.
 //
 // Dev-only: it lives under cmd/ so it is not part of the importable API and
 // no customer ever runs it.

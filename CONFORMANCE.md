@@ -12,7 +12,7 @@ Declared in `version.go` (META-001).
 ## Verifying
 
 The harness and vectors live in the reference SDK, so the commands below
-assume it is checked out as a sibling (`../node-sdk`), which is how
+assume it is checked out as a sibling (`../node`), which is how
 `setup.sh` in the install repo arranges things. The vectors in `spec/` here
 are a pinned copy, so `go test ./...` alone works without it.
 
@@ -23,11 +23,11 @@ go test ./...
 
 # the shared cross-language harness
 go build -o /tmp/conformance ./cmd/conformance
-node ../node-sdk/spec/harness/run-vectors.mjs -- /tmp/conformance
+node ../node/spec/harness/run-vectors.mjs -- /tmp/conformance
 
 # differential fuzz against the reference implementation
-node ../node-sdk/spec/harness/fuzz.mjs \
-  --ref  "node ../node-sdk/spec/driver/.build/node.js" \
+node ../node/spec/harness/fuzz.mjs \
+  --ref  "node ../node/spec/driver/.build/node.js" \
   --test "/tmp/conformance" \
   --iterations 20000
 ```
