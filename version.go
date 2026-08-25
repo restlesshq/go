@@ -12,7 +12,7 @@ const (
 
 	// SpecVersion is the spec/CONTRACT.md version this SDK is verified
 	// against.
-	SpecVersion = "1.0.0"
+	SpecVersion = "1.0.1"
 
 	// ConformanceLevel per CONTRACT.md 1.1: L1 is the pure functions, L2
 	// adds batching, caches, injection and the safety guarantees.

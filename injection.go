@@ -36,33 +36,51 @@ func RecoverySlug(method, path string) string {
 	return m + "-" + flat
 }
 
-// DebugInjection is what the adapter should layer onto an error response.
+// DebugInjection is what the adapter should layer onto a response.
 type DebugInjection struct {
 	Headers map[string]string
 	// Mutate rewrites a parsed JSON body. Nil when nothing should change.
 	Mutate func(body any) any
 }
 
-// BuildDebugInjection assembles the headers and body mutation for a 4xx/5xx
-// (INJECT-001..006).
-func BuildDebugInjection(status int, requestID, baseURL, prefix, recovery, method, path, docsURL string) DebugInjection {
-	if status < 400 { // INJECT-001
-		return DebugInjection{}
+// BuildDebugInjection assembles the debug headers, and on a 4xx/5xx the body
+// mutation as well (INJECT-001..006).
+//
+// portalURL is the project's public portal origin, published by the server.
+// It is NOT the ingest base URL, which serves /v1/* and would 404 both paths,
+// and there is deliberately no fallback to it: with no portal origin we emit
+// x-debug alone. A caller cannot tell a broken URL from a missing one, and one
+// fetched 404 teaches an agent to stop following the link (INJECT-006).
+// DebugHeaders are the debug response headers (INJECT-002). They ship on every
+// status, so an adapter must be able to set them before it commits a 2xx
+// header block, without knowing anything else about the response.
+//
+// x-log-url is omitted with no portal origin; x-debug carries no URL, so it
+// always ships.
+func DebugHeaders(requestID, prefix, portalURL string) map[string]string {
+	out := map[string]string{"x-debug": "npx api debug " + FormatRequestID(requestID, prefix)}
+	if portalURL != "" {
+		out["x-log-url"] = portalURL + "/logs/" + requestID
+	}
+	return out
+}
+
+func BuildDebugInjection(status int, requestID, prefix, recovery, method, path, portalURL string) DebugInjection {
+	headers := DebugHeaders(requestID, prefix, portalURL)
+
+	// INJECT-001. The body object is 4xx/5xx only: a successful body is the
+	// caller's data, not ours to reshape. With no portal origin there is no
+	// URL to put in one either (INJECT-006).
+	if status < 400 || portalURL == "" {
+		return DebugInjection{Headers: headers}
 	}
 
-	display := FormatRequestID(requestID, prefix)
-	// INJECT-006. Server-learned docs origin when we have one, else the
-	// configured base URL. One-batch staleness window after a domain change.
-	logHost := docsURL
-	if logHost == "" {
-		logHost = baseURL
-	}
-	logURL := logHost + "/logs/" + requestID
-	debugCmd := "npx api debug " + display
+	debugCmd := headers["x-debug"]
+	logURL := headers["x-log-url"]
 
 	slug := RecoverySlug(method, path)
 	digIn := "For the accepted parameters and next steps, fetch " +
-		logHost + "/p/" + requestID + "/" + slug + ".md"
+		portalURL + "/p/" + requestID + "/" + slug + ".md"
 	// INJECT-004. The dig-in line always ships; a cached recovery message
 	// precedes it, separated by a blank line.
 	recoveryText := digIn
@@ -71,10 +89,7 @@ func BuildDebugInjection(status int, requestID, baseURL, prefix, recovery, metho
 	}
 
 	return DebugInjection{
-		Headers: map[string]string{
-			"x-log-url": logURL,
-			"x-debug":   debugCmd,
-		},
+		Headers: headers,
 		Mutate: func(body any) any {
 			// INJECT-003. Objects only; an array or scalar body is left
 			// alone because there is nowhere sensible to attach debug.

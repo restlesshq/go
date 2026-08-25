@@ -1,7 +1,7 @@
 {
   "$generated": "GENERATED FILE - do not edit by hand. Inputs live in spec/cases.ts; run `npm run spec:vectors` to regenerate.",
   "$contract": "spec/CONTRACT.md",
-  "specVersion": "1.0.0",
+  "specVersion": "1.0.1",
   "cases": [
     {
       "id": "mask/ascii",

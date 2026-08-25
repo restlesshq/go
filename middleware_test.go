@@ -178,11 +178,15 @@ func TestInjectionAndRecoveryRoundTrip(t *testing.T) {
 		w.WriteHeader(404)
 		_, _ = w.Write([]byte(`{"code":"pet_not_found"}`))
 	})
+	mux.HandleFunc("GET /pets", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("content-type", "application/json")
+		_, _ = w.Write([]byte(`{"pets":[]}`))
+	})
 	srv := httptest.NewServer(client.Middleware()(mux))
 	defer srv.Close()
 
-	get := func() map[string]any {
-		resp, err := http.Get(srv.URL + "/pets/99")
+	get := func(path string) (*http.Response, map[string]any) {
+		resp, err := http.Get(srv.URL + path)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -191,31 +195,88 @@ func TestInjectionAndRecoveryRoundTrip(t *testing.T) {
 		if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 			t.Fatalf("response was not valid JSON (content-length bug?): %v", err)
 		}
-		if resp.Header.Get("x-log-url") == "" {
-			t.Error("no x-log-url on a 4xx (INJECT-002)")
-		}
-		return out
+		return resp, out
 	}
 
-	first := get()
-	debug := first["debug"].(map[string]any)
-	if strings.Contains(debug["recovery"].(string), "Check the id.") {
-		t.Error("first occurrence should not have a cached message yet")
+	// INJECT-006. The portal origin is learned from an upload RESPONSE, so
+	// nothing has one yet. Emit x-debug alone rather than a URL that 404s.
+	coldResp, cold := get("/pets/99")
+	if got := coldResp.Header.Get("x-log-url"); got != "" {
+		t.Errorf("x-log-url before the first round-trip: %q", got)
 	}
-	if !strings.Contains(debug["recovery"].(string), "get-pets-id.md") {
-		t.Errorf("dig-in slug wrong: %v", debug["recovery"])
+	if coldResp.Header.Get("x-debug") == "" {
+		t.Error("x-debug should survive a missing portal origin (INJECT-002)")
+	}
+	if _, ok := cold["debug"]; ok {
+		t.Error("no portal origin means no debug object at all (INJECT-006)")
 	}
 
-	client.Flush() // round-trips the reply, seeding the recovery cache
+	client.Flush() // round-trips the reply, seeding the portal origin and recovery
 
-	second := get()
-	debug2 := second["debug"].(map[string]any)
-	if !strings.Contains(debug2["recovery"].(string), "Check the id.") {
-		t.Errorf("second occurrence missing the cached message: %v", debug2["recovery"])
+	warmResp, warm := get("/pets/99")
+	if !strings.HasPrefix(warmResp.Header.Get("x-log-url"), "https://docs.acme.test/logs/") {
+		t.Errorf("x-log-url not on the portal origin: %q", warmResp.Header.Get("x-log-url"))
 	}
-	// INJECT-006: the server-supplied docs origin is now in use.
-	if !strings.HasPrefix(debug2["log"].(string), "https://docs.acme.test/") {
-		t.Errorf("docsUrl not applied: %v", debug2["log"])
+	// The ingest base URL is an upload target, never a log-URL host.
+	if strings.Contains(warmResp.Header.Get("x-log-url"), "ingress.example") {
+		t.Errorf("x-log-url built on the ingest origin: %q", warmResp.Header.Get("x-log-url"))
+	}
+	debug := warm["debug"].(map[string]any)
+	if !strings.HasPrefix(debug["log"].(string), "https://docs.acme.test/") {
+		t.Errorf("debug.log not on the portal origin: %v", debug["log"])
+	}
+	recovery := debug["recovery"].(string)
+	if !strings.Contains(recovery, "Check the id.") {
+		t.Errorf("missing the cached recovery message: %v", recovery)
+	}
+	// Both URLs share one origin (INJECT-004).
+	if !strings.Contains(recovery, "https://docs.acme.test/p/") {
+		t.Errorf("dig-in URL not on the portal origin: %v", recovery)
+	}
+	if !strings.Contains(recovery, "get-pets-id.md") {
+		t.Errorf("dig-in slug wrong: %v", recovery)
+	}
+}
+
+// INJECT-001. An agent that got an unexpected 200 has the same question as one
+// that got a 500, so the headers ship either way - but the body is untouched.
+func TestInjectionHeadersOn2xxWithoutTouchingBody(t *testing.T) {
+	client, _ := newTestClient(t, `{"docsUrl":"https://docs.acme.test"}`)
+	client.Setup(func(r *restless.RequestInfo) restless.SetupResult { return restless.SetupResult{} })
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /pets", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("content-type", "application/json")
+		_, _ = w.Write([]byte(`{"pets":[]}`))
+	})
+	srv := httptest.NewServer(client.Middleware()(mux))
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/pets")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	client.Flush() // seed the portal origin
+
+	resp, err = http.Get(srv.URL + "/pets")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var out map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatalf("response was not valid JSON: %v", err)
+	}
+
+	if !strings.HasPrefix(resp.Header.Get("x-log-url"), "https://docs.acme.test/logs/") {
+		t.Errorf("no x-log-url on a 2xx: %q", resp.Header.Get("x-log-url"))
+	}
+	if resp.Header.Get("x-debug") == "" {
+		t.Error("no x-debug on a 2xx")
+	}
+	if _, ok := out["debug"]; ok {
+		t.Error("a successful body is the caller's data; it must not be reshaped")
 	}
 }
 
