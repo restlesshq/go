@@ -1,0 +1,219 @@
+{
+  "$generated": "GENERATED FILE - do not edit by hand. Inputs live in spec/cases.ts; run `npm run spec:vectors` to regenerate.",
+  "$contract": "spec/CONTRACT.md",
+  "specVersion": "1.0.1",
+  "cases": [
+    {
+      "id": "inject/2xx-headers-only",
+      "requirement": "INJECT-001",
+      "op": "debugInjection",
+      "input": {
+        "status": 200,
+        "requestId": "9f18a0e2-1c3d-4b5a-8e7f-0a1b2c3d4e5f",
+        "portalUrl": "https://acme.restlessdocs.com",
+        "method": "GET",
+        "path": "/car/{id}"
+      },
+      "expected": {
+        "headers": {
+          "x-log-url": "https://acme.restlessdocs.com/logs/9f18a0e2-1c3d-4b5a-8e7f-0a1b2c3d4e5f",
+          "x-debug": "npx api debug 9f18a0e2-1c3d-4b5a-8e7f-0a1b2c3d4e5f"
+        },
+        "debug": null
+      },
+      "note": "Headers on every status; the body object stays 4xx/5xx only."
+    },
+    {
+      "id": "inject/2xx-301",
+      "requirement": "INJECT-001",
+      "op": "debugInjection",
+      "input": {
+        "status": 301,
+        "requestId": "9f18a0e2-1c3d-4b5a-8e7f-0a1b2c3d4e5f",
+        "portalUrl": "https://acme.restlessdocs.com"
+      },
+      "expected": {
+        "headers": {
+          "x-log-url": "https://acme.restlessdocs.com/logs/9f18a0e2-1c3d-4b5a-8e7f-0a1b2c3d4e5f",
+          "x-debug": "npx api debug 9f18a0e2-1c3d-4b5a-8e7f-0a1b2c3d4e5f"
+        },
+        "debug": null
+      }
+    },
+    {
+      "id": "inject/4xx-full",
+      "requirement": "INJECT-002",
+      "op": "debugInjection",
+      "input": {
+        "status": 404,
+        "requestId": "9f18a0e2-1c3d-4b5a-8e7f-0a1b2c3d4e5f",
+        "portalUrl": "https://acme.restlessdocs.com",
+        "method": "GET",
+        "path": "/car/{id}"
+      },
+      "expected": {
+        "headers": {
+          "x-log-url": "https://acme.restlessdocs.com/logs/9f18a0e2-1c3d-4b5a-8e7f-0a1b2c3d4e5f",
+          "x-debug": "npx api debug 9f18a0e2-1c3d-4b5a-8e7f-0a1b2c3d4e5f"
+        },
+        "debug": {
+          "log": "https://acme.restlessdocs.com/logs/9f18a0e2-1c3d-4b5a-8e7f-0a1b2c3d4e5f",
+          "cli": "npx api debug 9f18a0e2-1c3d-4b5a-8e7f-0a1b2c3d4e5f",
+          "recovery": "For the accepted parameters and next steps, fetch https://acme.restlessdocs.com/p/9f18a0e2-1c3d-4b5a-8e7f-0a1b2c3d4e5f/get-car-id.md"
+        }
+      },
+      "note": "Both URLs share the portal origin."
+    },
+    {
+      "id": "inject/5xx-full",
+      "requirement": "INJECT-002",
+      "op": "debugInjection",
+      "input": {
+        "status": 500,
+        "requestId": "9f18a0e2-1c3d-4b5a-8e7f-0a1b2c3d4e5f",
+        "portalUrl": "https://acme.restlessdocs.com",
+        "method": "POST",
+        "path": "/orders"
+      },
+      "expected": {
+        "headers": {
+          "x-log-url": "https://acme.restlessdocs.com/logs/9f18a0e2-1c3d-4b5a-8e7f-0a1b2c3d4e5f",
+          "x-debug": "npx api debug 9f18a0e2-1c3d-4b5a-8e7f-0a1b2c3d4e5f"
+        },
+        "debug": {
+          "log": "https://acme.restlessdocs.com/logs/9f18a0e2-1c3d-4b5a-8e7f-0a1b2c3d4e5f",
+          "cli": "npx api debug 9f18a0e2-1c3d-4b5a-8e7f-0a1b2c3d4e5f",
+          "recovery": "For the accepted parameters and next steps, fetch https://acme.restlessdocs.com/p/9f18a0e2-1c3d-4b5a-8e7f-0a1b2c3d4e5f/post-orders.md"
+        }
+      }
+    },
+    {
+      "id": "inject/no-portal-2xx",
+      "requirement": "INJECT-006",
+      "op": "debugInjection",
+      "input": {
+        "status": 200,
+        "requestId": "9f18a0e2-1c3d-4b5a-8e7f-0a1b2c3d4e5f"
+      },
+      "expected": {
+        "headers": {
+          "x-debug": "npx api debug 9f18a0e2-1c3d-4b5a-8e7f-0a1b2c3d4e5f"
+        },
+        "debug": null
+      },
+      "note": "No portal origin: x-debug only, and never a URL on the ingest host."
+    },
+    {
+      "id": "inject/no-portal-4xx",
+      "requirement": "INJECT-006",
+      "op": "debugInjection",
+      "input": {
+        "status": 404,
+        "requestId": "9f18a0e2-1c3d-4b5a-8e7f-0a1b2c3d4e5f",
+        "method": "GET",
+        "path": "/car/{id}"
+      },
+      "expected": {
+        "headers": {
+          "x-debug": "npx api debug 9f18a0e2-1c3d-4b5a-8e7f-0a1b2c3d4e5f"
+        },
+        "debug": null
+      },
+      "note": "No portal origin means no debug object at all, so no dig-in line."
+    },
+    {
+      "id": "inject/prefix",
+      "requirement": "INJECT-002",
+      "op": "debugInjection",
+      "input": {
+        "status": 404,
+        "requestId": "9f18a0e2-1c3d-4b5a-8e7f-0a1b2c3d4e5f",
+        "prefix": "TST",
+        "portalUrl": "https://acme.restlessdocs.com"
+      },
+      "expected": {
+        "headers": {
+          "x-log-url": "https://acme.restlessdocs.com/logs/9f18a0e2-1c3d-4b5a-8e7f-0a1b2c3d4e5f",
+          "x-debug": "npx api debug TST-9f18a0e2-1c3d-4b5a-8e7f-0a1b2c3d4e5f"
+        },
+        "debug": {
+          "log": "https://acme.restlessdocs.com/logs/9f18a0e2-1c3d-4b5a-8e7f-0a1b2c3d4e5f",
+          "cli": "npx api debug TST-9f18a0e2-1c3d-4b5a-8e7f-0a1b2c3d4e5f",
+          "recovery": "For the accepted parameters and next steps, fetch https://acme.restlessdocs.com/p/9f18a0e2-1c3d-4b5a-8e7f-0a1b2c3d4e5f/unknown.md"
+        }
+      },
+      "note": "x-log-url carries the RAW id; only the CLI hint is prefixed."
+    },
+    {
+      "id": "inject/authored-recovery",
+      "requirement": "INJECT-004",
+      "op": "debugInjection",
+      "input": {
+        "status": 402,
+        "requestId": "9f18a0e2-1c3d-4b5a-8e7f-0a1b2c3d4e5f",
+        "portalUrl": "https://acme.restlessdocs.com",
+        "recovery": "Try another card.",
+        "method": "POST",
+        "path": "/charge"
+      },
+      "expected": {
+        "headers": {
+          "x-log-url": "https://acme.restlessdocs.com/logs/9f18a0e2-1c3d-4b5a-8e7f-0a1b2c3d4e5f",
+          "x-debug": "npx api debug 9f18a0e2-1c3d-4b5a-8e7f-0a1b2c3d4e5f"
+        },
+        "debug": {
+          "log": "https://acme.restlessdocs.com/logs/9f18a0e2-1c3d-4b5a-8e7f-0a1b2c3d4e5f",
+          "cli": "npx api debug 9f18a0e2-1c3d-4b5a-8e7f-0a1b2c3d4e5f",
+          "recovery": "Try another card.\n\nFor the accepted parameters and next steps, fetch https://acme.restlessdocs.com/p/9f18a0e2-1c3d-4b5a-8e7f-0a1b2c3d4e5f/post-charge.md"
+        }
+      },
+      "note": "The authored hint precedes the dig-in line, separated by a blank line."
+    },
+    {
+      "id": "inject/unknown-slug",
+      "requirement": "INJECT-005",
+      "op": "debugInjection",
+      "input": {
+        "status": 404,
+        "requestId": "9f18a0e2-1c3d-4b5a-8e7f-0a1b2c3d4e5f",
+        "portalUrl": "https://acme.restlessdocs.com",
+        "method": "GET"
+      },
+      "expected": {
+        "headers": {
+          "x-log-url": "https://acme.restlessdocs.com/logs/9f18a0e2-1c3d-4b5a-8e7f-0a1b2c3d4e5f",
+          "x-debug": "npx api debug 9f18a0e2-1c3d-4b5a-8e7f-0a1b2c3d4e5f"
+        },
+        "debug": {
+          "log": "https://acme.restlessdocs.com/logs/9f18a0e2-1c3d-4b5a-8e7f-0a1b2c3d4e5f",
+          "cli": "npx api debug 9f18a0e2-1c3d-4b5a-8e7f-0a1b2c3d4e5f",
+          "recovery": "For the accepted parameters and next steps, fetch https://acme.restlessdocs.com/p/9f18a0e2-1c3d-4b5a-8e7f-0a1b2c3d4e5f/unknown.md"
+        }
+      }
+    },
+    {
+      "id": "inject/trailing-slash-origin",
+      "requirement": "WIRE-023",
+      "op": "debugInjection",
+      "input": {
+        "status": 404,
+        "requestId": "9f18a0e2-1c3d-4b5a-8e7f-0a1b2c3d4e5f",
+        "portalUrl": "https://acme.restlessdocs.com",
+        "method": "GET",
+        "path": "/x"
+      },
+      "expected": {
+        "headers": {
+          "x-log-url": "https://acme.restlessdocs.com/logs/9f18a0e2-1c3d-4b5a-8e7f-0a1b2c3d4e5f",
+          "x-debug": "npx api debug 9f18a0e2-1c3d-4b5a-8e7f-0a1b2c3d4e5f"
+        },
+        "debug": {
+          "log": "https://acme.restlessdocs.com/logs/9f18a0e2-1c3d-4b5a-8e7f-0a1b2c3d4e5f",
+          "cli": "npx api debug 9f18a0e2-1c3d-4b5a-8e7f-0a1b2c3d4e5f",
+          "recovery": "For the accepted parameters and next steps, fetch https://acme.restlessdocs.com/p/9f18a0e2-1c3d-4b5a-8e7f-0a1b2c3d4e5f/get-x.md"
+        }
+      },
+      "note": "The origin is stripped of trailing slashes on ingest (WIRE-023), so the SDK appends directly."
+    }
+  ]
+}

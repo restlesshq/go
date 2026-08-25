@@ -208,9 +208,15 @@ func (rec *responseRecorder) WriteHeader(status int) {
 			rec.streaming = true
 		}
 	}
-	// A success or a stream is passed straight through: there is nothing to
+	// A success or a stream is passed straight through: there is no BODY to
 	// inject, so there is no reason to hold the response.
 	if rec.status < 400 || rec.streaming {
+		// INJECT-002. The headers ship on every status, and this is the last
+		// moment before the header block is committed to the client.
+		for name, value := range DebugHeaders(
+			rec.rawID, rec.engine.RequestIDPrefix(), rec.engine.PortalURL()) {
+			rec.ResponseWriter.Header().Set(name, value)
+		}
 		rec.ResponseWriter.WriteHeader(status)
 	}
 }
@@ -280,8 +286,8 @@ func (rec *responseRecorder) finish(
 			recovery = rec.engine.LookupRecovery(fingerprint.Key)
 		}
 		injection := BuildDebugInjection(
-			rec.status, rec.rawID, rec.engine.BaseURL(), rec.engine.RequestIDPrefix(),
-			recovery, rec.method, rec.route, rec.engine.DocsURL())
+			rec.status, rec.rawID, rec.engine.RequestIDPrefix(),
+			recovery, rec.method, rec.route, rec.engine.PortalURL())
 
 		for name, value := range injection.Headers {
 			rec.ResponseWriter.Header().Set(name, value)

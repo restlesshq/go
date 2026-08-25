@@ -145,7 +145,8 @@ The SDK reads `requestIdPrefix` and `redact` from the matching `apis[]` entry. S
 - Extend additively with `restless.WithRedact(restless.RedactOptions{...})` or the settings file. Sentinel: `<REDACTED:<len>>` or `<REDACTED:<len>:<last4>>`.
 - Bodies are capped at **256 KiB** and truncated with `[...TRUNCATED: original N bytes]`.
 - Request IDs are v4 UUIDs, never time-based. Every response gets `x-restless-id`; `x-request-id` only if the caller did not send one.
-- Status **>= 400** gets `x-log-url` and `x-debug` headers plus a `debug` block in a JSON body.
+- Every status gets `x-log-url` and `x-debug` headers; status **>= 400** also gets a `debug` block in a JSON body.
+- `x-log-url` points at your project's public docs host, which the server tells the SDK on each upload. Until the first upload round-trips, it is omitted rather than guessed: a URL that 404s is worse than no URL. The ingest host is never used for it.
 - Batching is fixed: 10 per batch, 5000 ms flush, 1000-entry queue dropping oldest, immediate flush against localhost. Uploads run on their own goroutine and never block a response.
 - **Panics in your handler** are logged with their stack and then re-panicked, so `net/http`'s own handling is unchanged.
 

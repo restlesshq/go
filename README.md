@@ -64,8 +64,8 @@ apart from a 404 on an endpoint that does not exist.
   and friends are redacted before anything leaves your process. Bodies with
   nothing to redact are passed through untouched, so your payloads are not
   reserialized on the way out and large integers keep their precision.
-- **Error triage.** 4xx/5xx responses get `x-log-url` and `x-debug` headers
-  and a `debug` block in the JSON body. If someone attaches a "next steps"
+- **Error triage.** Every response gets `x-log-url` and `x-debug` headers,
+  and 4xx/5xx responses also get a `debug` block in the JSON body. If someone attaches a "next steps"
   message to an error in the dashboard, the SDK injects it as
   `debug.recovery` - read synchronously from an in-process cache, never
   blocking the response on a network call.

@@ -59,9 +59,9 @@ type Engine struct {
 	callback        SetupFunc
 	requestIDPrefix string
 
-	docsURL string
-	docsMu  chan struct{} // 1-buffered, used as a lightweight mutex
-	baseURL string
+	portalURL string
+	portalMu  chan struct{} // 1-buffered, used as a lightweight mutex
+	baseURL   string
 }
 
 func NewEngine(apiKey, baseURL, requestIDPrefix string, redact RedactOptions, transport Transport) *Engine {
@@ -72,9 +72,9 @@ func NewEngine(apiKey, baseURL, requestIDPrefix string, redact RedactOptions, tr
 		redact:          redact,
 		requestIDPrefix: requestIDPrefix,
 		baseURL:         baseURL,
-		docsMu:          make(chan struct{}, 1),
+		portalMu:        make(chan struct{}, 1),
 	}
-	e.docsMu <- struct{}{}
+	e.portalMu <- struct{}{}
 	e.Uploader = NewUploader(apiKey, baseURL, requestIDPrefix, transport, e.handleServerResponse)
 	return e
 }
@@ -85,18 +85,20 @@ func (e *Engine) BaseURL() string         { return e.baseURL }
 func (e *Engine) RequestIDPrefix() string { return e.requestIDPrefix }
 func (e *Engine) HasAPIKey() bool         { return e.Uploader.HasAPIKey() }
 
-// DocsURL is the server-learned origin for injected log links (INJECT-006).
-func (e *Engine) DocsURL() string {
-	<-e.docsMu
-	url := e.docsURL
-	e.docsMu <- struct{}{}
+// PortalURL is the server-published portal origin every injected URL is built
+// on. Empty before the first upload round-trip, and then nothing is emitted
+// rather than a guess (INJECT-006).
+func (e *Engine) PortalURL() string {
+	<-e.portalMu
+	url := e.portalURL
+	e.portalMu <- struct{}{}
 	return url
 }
 
-func (e *Engine) setDocsURL(url string) {
-	<-e.docsMu
-	e.docsURL = url
-	e.docsMu <- struct{}{}
+func (e *Engine) setPortalURL(url string) {
+	<-e.portalMu
+	e.portalURL = url
+	e.portalMu <- struct{}{}
 }
 
 // handleServerResponse acts on the three channels piggybacked onto an upload
@@ -105,7 +107,9 @@ func (e *Engine) handleServerResponse(body []byte, batchFingerprints []string) {
 	var parsed struct {
 		NeedsEnrichment  []string           `json:"needsEnrichment"`
 		RecoveryMessages map[string]*string `json:"recoveryMessages"`
-		DocsURL          string             `json:"docsUrl"`
+		// The wire key stays docsUrl: every already-deployed SDK reads it, so
+		// renaming would strand them all with no portal origin (WIRE-023).
+		DocsURL string `json:"docsUrl"`
 	}
 	if err := json.Unmarshal(body, &parsed); err != nil {
 		return // non-JSON is fine
@@ -120,7 +124,7 @@ func (e *Engine) handleServerResponse(body []byte, batchFingerprints []string) {
 		for len(trimmed) > 0 && trimmed[len(trimmed)-1] == '/' {
 			trimmed = trimmed[:len(trimmed)-1]
 		}
-		e.setDocsURL(trimmed)
+		e.setPortalURL(trimmed)
 	}
 
 	for _, key := range batchFingerprints {

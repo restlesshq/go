@@ -132,10 +132,44 @@ func Dispatch(op string, in map[string]any) (any, error) {
 	case "recoverySlug":
 		return restless.RecoverySlug(str(in, "method"), str(in, "path")), nil
 
+	case "debugInjection":
+		return opDebugInjection(in)
+
 	case "harEntry":
 		return opHarEntry(in)
 	}
 	return nil, fmt.Errorf("unknown op: %s", op)
+}
+
+// opDebugInjection reports the observable surface only: the headers, and the
+// debug object the mutator would merge (null when there is no mutator).
+//
+// It goes through ApplyInternalBodyMods rather than calling Mutate directly
+// because the ordered-JSON object it operates on is package-private, and
+// routing through the real body path is what the vectors are meant to check.
+func opDebugInjection(in map[string]any) (any, error) {
+	inj := restless.BuildDebugInjection(
+		num(in, "status"),
+		str(in, "requestId"),
+		str(in, "prefix"),
+		str(in, "recovery"),
+		str(in, "method"),
+		str(in, "path"),
+		str(in, "portalUrl"),
+	)
+
+	out := map[string]any{"headers": inj.Headers, "debug": nil}
+	if inj.Mutate == nil {
+		return out, nil
+	}
+
+	body := restless.ApplyInternalBodyMods("{}", "application/json", inj.Mutate)
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(body), &parsed); err != nil {
+		return nil, fmt.Errorf("debugInjection: %w", err)
+	}
+	out["debug"] = parsed["debug"]
+	return out, nil
 }
 
 // nilIfEmpty maps Go's zero value to JSON null. The protocol represents
