@@ -1,3 +1,14 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/restless-init-dark.svg">
+  <img width="880" src="docs/restless-init.svg" alt="Restless">
+</picture>
+
+Run in your codebase to get started:
+
+```sh
+npx restless init
+```
+
 # restless-sdk-go
 
 Capture your API traffic and send it to [Restless](https://restless.ai).
