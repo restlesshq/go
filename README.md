@@ -1,6 +1,6 @@
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/restless-init-dark.svg">
-  <img width="880" src="docs/restless-init.svg" alt="Restless">
+  <img width="100%" src="docs/restless-init.svg" alt="Restless">
 </picture>
 
 Run in your codebase to get started:
