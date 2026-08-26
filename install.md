@@ -135,7 +135,7 @@ APIKey: restless.Mask(orDefault(r.Header("Authorization"), "anonymous"))
 
 ## 7. `.restless/settings.json`
 
-Read at startup, walking up from the working directory. Created and owned by the `api` CLI (`npx api setup`). Every Restless SDK reads the same file with the same camelCase keys.
+Read at startup, walking up from the working directory. Created and owned by the `restless` CLI (`npx restless init`). Every Restless SDK reads the same file with the same camelCase keys.
 
 The SDK reads `requestIdPrefix` and `redact` from the matching `apis[]` entry. Select one with `restless.WithAPI("Public API")` when several are defined.
 
