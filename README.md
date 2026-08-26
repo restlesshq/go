@@ -9,6 +9,8 @@ Run in your codebase to get started:
 npx restless init
 ```
 
+This scans your project, figures out your framework, generates an OpenAPI spec, automatically wires the SDK into your server.
+
 # restless-sdk-go
 
 Capture your API traffic and send it to [Restless](https://restless.ai).
