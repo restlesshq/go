@@ -137,14 +137,14 @@ APIKey: restless.Mask(orDefault(r.Header("Authorization"), "anonymous"))
 
 Read at startup, walking up from the working directory. Created and owned by the `restless` CLI (`npx restless init`). Every Restless SDK reads the same file with the same camelCase keys.
 
-The SDK reads `requestIdPrefix` and `redact` from the matching `apis[]` entry. Select one with `restless.WithAPI("Public API")` when several are defined.
+The SDK reads `requestIdPrefix` and `redact` from the matching `apis[]` entry. Select one with `restless.WithAPI("Public API")` when several are defined. Everything else on the entry - `projectId` included, which is per-API and never top-level - belongs to the CLI, not the runtime.
 
 ## 8. Redaction, request IDs, batching
 
 - **Headers redacted by default:** `authorization`, `cookie`, `set-cookie`, `proxy-authorization`, `x-api-key`, `x-auth-token`. **Body keys and query params:** `password`, `pass`, `pwd`, `token`, `secret`, `apikey`, `accesstoken`, `refreshtoken`, `idtoken`, `sessionid`, `ssn`, `creditcard`, `ccnumber`, `cvv`, `cvc`. Matching ignores case, `-` and `_`.
 - Extend additively with `restless.WithRedact(restless.RedactOptions{...})` or the settings file. Sentinel: `<REDACTED:<len>>` or `<REDACTED:<len>:<last4>>`.
 - Bodies are capped at **256 KiB** and truncated with `[...TRUNCATED: original N bytes]`.
-- Request IDs are v4 UUIDs, never time-based. Every response gets `x-restless-id`; `x-request-id` only if the caller did not send one.
+- Request IDs are v4 UUIDs, never time-based. Exactly one id header comes back, always ours: `x-request-id` by default, or `x-restless-id` when the incoming request already carried an `x-request-id` (we never stomp or reuse an existing chain). With no key resolved the value is the literal `missing-key`.
 - Every status gets `x-log-url` and `x-debug` headers; status **>= 400** also gets a `debug` block in a JSON body.
 - `x-log-url` points at your project's public docs host, which the server tells the SDK on each upload. Until the first upload round-trips, it is omitted rather than guessed: a URL that 404s is worse than no URL. The ingest host is never used for it.
 - Batching is fixed: 10 per batch, 5000 ms flush, 1000-entry queue dropping oldest, immediate flush against localhost. Uploads run on their own goroutine and never block a response.
@@ -181,4 +181,4 @@ Go has no `.env` convention: the environment comes from your process manager. Pa
 2. `client.Middleware()` wraps the handler passed to `ListenAndServe`, outermost.
 3. A route resolver is passed unless this is a Go 1.23+ `ServeMux` (§4).
 4. **`go build ./...` succeeds.** Go is the one language where the wiring either compiles or does not.
-5. Starting the server and curling any endpoint returns an `x-restless-id` response header.
+5. Starting the server and curling any endpoint returns an `x-request-id` response header carrying a fresh UUID. If your curl sends its own `x-request-id`, look for `x-restless-id` instead. A value of `missing-key` means the server is up but never loaded `RESTLESS_KEY`; restart it.
