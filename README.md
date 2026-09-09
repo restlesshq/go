@@ -1,7 +1,9 @@
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/restless-init-dark.svg">
-  <img width="100%" src="docs/restless-init.svg" alt="Restless">
-</picture>
+<a href="https://restless.ai">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/restless-init-dark.svg">
+    <img width="100%" src="docs/restless-init.svg" alt="Restless">
+  </picture>
+</a>
 
 Run in your codebase to get started:
 
