@@ -96,6 +96,32 @@ apart from a 404 on an endpoint that does not exist.
   you already attached keeps being injected.
 - **Blocking.** Return a `Block` from the setup callback to reject a request
   before your handler runs.
+- **Sampling.** Send less for noisy endpoints without losing your counts.
+  Each endpoint is `SampleOn` (the default), `SampleOff`, `SampleErrors`
+  (only status >= 400), or a rate such as `SampleRate(0.1)`: that fraction
+  of successful requests is logged in full and the rest without bodies, so
+  counts, latency and per-customer usage stay exact. Errors are never
+  sampled.
+
+  ```go
+  client := restless.MustNew(os.Getenv("RESTLESS_KEY"),
+      restless.WithSampling(restless.Sampling{
+          Default: restless.SampleOn,
+          Routes: map[string]restless.SamplingMode{
+              "GET /health":  restless.SampleOff,
+              "GET /status":  restless.SampleErrors,
+              "GET /pets":    restless.SampleRate(0.1),
+              "* /pets/{id}": restless.SampleRate(0.5),
+          },
+      }))
+  ```
+
+  Keys are a method (or `*` for any) and the route pattern your router
+  matched; `{id}` and `:id` are the same. The same `sampling` block can live
+  in `.restless/settings.json`, and the code option wins per route. A request
+  on a `SampleOff` route, or a success on a `SampleErrors` route, sends
+  nothing and gets no `x-request-id` header. An invalid value never fails
+  `New`: it falls back to `SampleOn` and says so under `DEBUG=restless`.
 
 ## Never breaks your API
 
@@ -114,7 +140,7 @@ their own goroutine and never block a response.
 
 ## Conformance
 
-Implements version 1.0.0 of the Restless SDK Contract at level L2, verified
+Implements version 1.1.0 of the Restless SDK Contract at level L2, verified
 against the shared cross-language conformance vectors. See
 [CONFORMANCE.md](./CONFORMANCE.md).
 

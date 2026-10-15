@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Spec version** | 1.0.1 |
+| **Spec version** | 1.1.0 |
 | **Level** | L2 (core + batching, caches, injection, safety) |
 | **Reference** | `restlesshq/node` (`@restlessai/sdk`) |
 | **Driver** | `go run ./cmd/conformance` |
@@ -32,9 +32,9 @@ node ../node/spec/harness/fuzz.mjs \
   --iterations 20000
 ```
 
-Current status: **206 vectors, 198 passed, 0 failed, 8 skipped.** Zero
-divergence across ~28,000 fuzz comparisons on four seeds (24301, 90210, 7,
-1337).
+Current status: **252 vectors, 244 passed, 0 failed, 8 skipped.** Zero
+divergence across ~90,000 fuzz comparisons on five seeds (24301, 90210, 7,
+1337, 5), about a quarter of them on the sampling ops.
 
 The 8 skips are cases outside this implementation's dialect, not gaps:
 
@@ -65,6 +65,9 @@ the reference. They are the reason this SDK is byte-compatible.
 | FP-042 | "The LAST project dir" is a segment scan, not a regex. RE2 has no lookahead to express a rightmost match in one pass, and the loop is clearer than a reversed pattern would be anyway. |
 | FP-043 | Go's `debug.Stack()` is innermost-FIRST, like v8 and unlike a Python traceback, so the walk goes forwards. |
 | FP-044 | Frames are `func\n\tfile.go:line`. Stdlib frames are skipped via `runtime.GOROOT()` rather than a hardcoded path, and the SDK's own frames by package prefix *with* the trailing separator (without it, `github.com/restlesshq/go` also matches `..._test`). |
+| SAMPLE-002 | The rate is quantized as `math.Floor(float64(r*10000) + 0.5)`. The Go spec lets the compiler fuse `x*y+z` into one FMA instruction (arm64 does), which skips rounding the product; the explicit conversion forces the two roundings JavaScript performs. A search around every half step found no rate in [0, 1] where fusion moves the result, so this is insurance, not a known divergence. |
+| SAMPLE-013 | Route key ORDER decides which of two keys normalizing to the same one wins. `encoding/json` into a map has already lost it, so the settings file's `sampling` is kept as `json.RawMessage` and decoded with the order-preserving parser in `orderedjson.go`, and the driver hands the sampling ops their raw input for the same reason. `WithSampling` takes a Go map, which has no order at all: its keys are taken in sorted byte order, so the later key in byte order wins. That is deterministic, which map iteration is not. |
+| SAMPLE-032 | `net/http` commits the status at `WriteHeader`, a first `Write`, or a `Flush`, so the recorder decides at the first of those (or at the end of a handler that wrote nothing, or at a panic) and takes the id header back there on a drop. `Flush` before any write goes through `WriteHeader`, and a held 4xx/5xx is not flushed early. |
 | CACHE-* | Every cache is mutex-guarded. Go serves requests on many goroutines, so an unsynchronized map is not a theoretical race - the runtime aborts the process. |
 
 ## Exemption: PRIM-034 (unpaired surrogates)
@@ -78,3 +81,9 @@ Per PRIM-035 the SDK never raises on such input and substitutes U+FFFD. The
 conformance driver reports `unsupported` for any input LINE containing a
 lone surrogate escape, because the limitation is at the transport layer
 rather than in redaction.
+
+The sampling ops are the one exception, and are run anyway. Every string
+they read is a route key, a path or a mode, each valid only as printable
+ASCII (SAMPLE-001, SAMPLE-010), so an unpaired surrogate and the U+FFFD it
+decodes to are both rejected and the output cannot differ. The fuzz key
+generator oversamples surrogates, so refusing them would only cost coverage.

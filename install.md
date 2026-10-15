@@ -51,7 +51,7 @@ log.Fatal(http.ListenAndServe(":8080", client.Middleware()(mux)))
 | `Middleware(resolvers ...RouteResolver)` | The `func(http.Handler) http.Handler` to wrap with. |
 | `Flush()` | Force-upload the current batch, e.g. before exit. |
 
-`MustNew` panics on a configuration error; `New` returns `(*Client, error)`. Both take functional options after the key: `WithAPI`, `WithBaseURL`, `WithRedact`, `WithTransport`.
+`MustNew` panics on a configuration error; `New` returns `(*Client, error)`. Both take functional options after the key: `WithAPI`, `WithBaseURL`, `WithRedact`, `WithSampling` (§7a), `WithTransport`.
 
 **Wrap as far out as you can**, above any middleware that can reject a request, so the SDK still records the 401 it produced.
 
@@ -137,7 +137,55 @@ APIKey: restless.Mask(orDefault(r.Header("Authorization"), "anonymous"))
 
 Read at startup, walking up from the working directory. Created and owned by the `restless` CLI (`npx restless init`). Every Restless SDK reads the same file with the same camelCase keys.
 
-The SDK reads `requestIdPrefix` and `redact` from the matching `apis[]` entry. Select one with `restless.WithAPI("Public API")` when several are defined. Everything else on the entry - `projectId` included, which is per-API and never top-level - belongs to the CLI, not the runtime.
+The SDK reads `requestIdPrefix`, `redact` and `sampling` from the matching `apis[]` entry. Select one with `restless.WithAPI("Public API")` when several are defined. `sampling` is merged with `WithSampling`, code winning per route (§7a). Everything else on the entry - `projectId` included, which is per-API and never top-level - belongs to the CLI, not the runtime.
+
+```json
+{
+  "version": 1,
+  "apis": [
+    {
+      "name": "Public API",
+      "requestIdPrefix": "PUB",
+      "redact": { "headers": ["x-company-auth"] },
+      "sampling": {
+        "default": "on",
+        "routes": { "GET /health": "off", "GET /pets": 0.1 }
+      }
+    }
+  ]
+}
+```
+
+## 7a. Sampling (off by default)
+
+Without a sampling config every request is logged in full. With one, each endpoint gets a mode:
+
+| mode | settings.json | successes (< 400) | errors (>= 400) |
+|---|---|---|---|
+| `SampleOn` (default) | `"on"` | full log | full log |
+| `SampleRate(r)`, `r` from 0 to 1 | a number | that fraction in full, the rest without bodies | full log |
+| `SampleErrors` | `"errors"` | nothing sent | full log |
+| `SampleOff` | `"off"` | nothing sent | nothing sent |
+
+```go
+client := restless.MustNew(os.Getenv("RESTLESS_KEY"),
+    restless.WithSampling(restless.Sampling{
+        Routes: map[string]restless.SamplingMode{
+            "GET /health":       restless.SampleOff,
+            "GET /pets":         restless.SampleRate(0.1),
+            "* /internal/{job}": restless.SampleErrors,
+        },
+    }))
+```
+
+Rules an installer should know:
+
+- Keys are `"<METHOD> <route pattern>"`, with `*` for any method. Use the pattern the router matched (`/pets/{id}` or `/pets/:id`, both work), never a concrete URL like `/pets/42`. `HEAD` does not fall back to `GET`.
+- The match uses the same route pattern as everything else (§4). On a router without a resolver, every request has no pattern and gets `Default`, so a route key silently never matches.
+- `Default` set in code replaces the settings file's; `Routes` merge by key, code winning.
+- Only suggest `SampleOff` or `SampleErrors` for endpoints the user agrees are noise (health checks, readiness probes, polling). Never sample auth or payment endpoints without asking.
+- A request that sends nothing also gets no `x-request-id` header, so do not use an off route to verify the install.
+- A panicking handler counts as an error, so only `SampleOff` drops it.
 
 ## 8. Redaction, request IDs, batching
 
@@ -145,7 +193,7 @@ The SDK reads `requestIdPrefix` and `redact` from the matching `apis[]` entry. S
 - Extend additively with `restless.WithRedact(restless.RedactOptions{...})` or the settings file. Sentinel: `<REDACTED:<len>>` or `<REDACTED:<len>:<last4>>`.
 - Bodies are capped at **256 KiB** and truncated with `[...TRUNCATED: original N bytes]`.
 - Request IDs are v4 UUIDs, never time-based. The SDK sets exactly one id header, always its own: `x-request-id` by default, or `x-restless-id` when the incoming request already carried an `x-request-id` (we never stomp or reuse an existing chain). With no key resolved the value is the literal `missing-key`.
-- Every status gets `x-log-url` and `x-debug` headers; status **>= 400** also gets a `debug` block in a JSON body.
+- Every status gets `x-log-url` and `x-debug` headers; status **>= 400** also gets a `debug` block in a JSON body. A request sampling drops (§7a) gets neither, and no id header.
 - `x-log-url` points at your project's public docs host, which the server tells the SDK on each upload. Until the first upload round-trips, it is omitted rather than guessed: a URL that 404s is worse than no URL. The ingest host is never used for it.
 - Batching is fixed: 10 per batch, 5000 ms flush, 1000-entry queue dropping oldest, immediate flush against localhost. Uploads run on their own goroutine and never block a response.
 - **Panics in your handler** are logged with their stack and then re-panicked, so `net/http`'s own handling is unchanged.

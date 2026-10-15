@@ -102,6 +102,10 @@ type Uploader struct {
 	requestIDPrefix string
 	transport       Transport
 	onResponse      func(body []byte, batchFingerprints []string)
+	// samplingHash is stamped on every upload as x-restless-sampling
+	// (SAMPLE-052). Empty when sampling is not configured, and then no
+	// header is sent at all.
+	samplingHash string
 
 	mu    sync.Mutex
 	queue []CapturedRequest
@@ -219,11 +223,15 @@ func (u *Uploader) Flush() {
 	url := u.baseURL + "/v1/request" // WIRE-001
 	debugLog("uploading %d entries to %s", len(batch), url)
 
-	respBody, err := u.transport(url, body, map[string]string{
+	headers := map[string]string{
 		"Content-Type":            "application/json",   // WIRE-002
 		"Authorization":           "Bearer " + u.apiKey, // WIRE-003
 		"X-Restless-Spec-Version": SpecVersion,          // META-002
-	})
+	}
+	if u.samplingHash != "" {
+		headers["x-restless-sampling"] = u.samplingHash // SAMPLE-052
+	}
+	respBody, err := u.transport(url, body, headers)
 	if err != nil {
 		debugLog("upload error: %v", err)
 		return
@@ -232,6 +240,38 @@ func (u *Uploader) Flush() {
 	if len(respBody) > 0 && u.onResponse != nil {
 		u.onResponse(respBody, fingerprints)
 	}
+}
+
+// SendSamplingReport POSTs the sampling config report (SAMPLE-050) on its
+// own goroutine and calls done when it has finished, whatever happened. The
+// same gates as an upload apply: nothing under a test runner or without a
+// project key (SAMPLE-051). Never blocks and never panics into the caller.
+func (u *Uploader) SendSamplingReport(body []byte, done func()) {
+	if (IsTestRun() && os.Getenv("RESTLESS_SETUP_MODE") != "1") || u.apiKey == "" {
+		done()
+		return
+	}
+	u.wg.Add(1)
+	go func() {
+		defer u.wg.Done()
+		defer done()
+		defer func() {
+			if r := recover(); r != nil {
+				debugLog("sampling report panicked: %v", r)
+			}
+		}()
+		url := u.baseURL + "/v1/sampling"
+		_, err := u.transport(url, body, map[string]string{
+			"Content-Type":            "application/json",   // WIRE-002
+			"Authorization":           "Bearer " + u.apiKey, // WIRE-003
+			"X-Restless-Spec-Version": SpecVersion,          // META-002
+		})
+		if err != nil {
+			debugLog("sampling report error: %v", err)
+			return
+		}
+		debugLog("sampling report sent")
+	}()
 }
 
 // Wait blocks until in-flight uploads finish. Intended for tests and for a
@@ -304,6 +344,7 @@ type wireEntry struct {
 	ID               string       `json:"_id"`
 	RoutePattern     string       `json:"routePattern,omitempty"`
 	ErrorFingerprint *Fingerprint `json:"errorFingerprint,omitempty"`
+	Sampled          bool         `json:"sampled,omitempty"` // WIRE-030: true or absent
 	Group            wireGroup    `json:"group"`
 	APIKey           string       `json:"apiKey,omitempty"`
 	ProjectID        string       `json:"projectId,omitempty"`
@@ -341,6 +382,7 @@ func buildWireEntry(c CapturedRequest) wireEntry {
 		ID:               c.RequestID, // WIRE-011: raw uuid, no prefix
 		RoutePattern:     c.RoutePattern,
 		ErrorFingerprint: c.ErrorFingerprint, // WIRE-017: absent on success
+		Sampled:          c.Sampled,
 		Group:            wireGroup{ID: groupID, Label: label, Emails: emails},
 		APIKey:           apiKey,      // WIRE-014
 		ProjectID:        ownerID,     // WIRE-015

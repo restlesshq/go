@@ -79,6 +79,10 @@ type CapturedRequest struct {
 	ErrorFingerprint *Fingerprint
 	StackTrace       string
 
+	// Sampled marks a sampling stub (SAMPLE-034). Record drops both bodies
+	// before redaction, and the upload carries `sampled: true`.
+	Sampled bool
+
 	// headerOrder preserves the order headers were captured in (HAR-004).
 	// Go maps have deliberately randomized iteration order, so without this
 	// the same request would serialize its headers differently every time.
