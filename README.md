@@ -100,8 +100,8 @@ apart from a 404 on an endpoint that does not exist.
   Each endpoint is `SampleOn` (the default), `SampleOff`, `SampleErrors`
   (only status >= 400), or a rate such as `SampleRate(0.1)`: that fraction
   of successful requests is logged in full and the rest without bodies, so
-  counts, latency and per-customer usage stay exact. Errors are never
-  sampled.
+  counts, latency and per-customer usage stay exact. Errors are always
+  logged in full, except on a `SampleOff` route.
 
   ```go
   client := restless.MustNew(os.Getenv("RESTLESS_KEY"),
@@ -118,9 +118,12 @@ apart from a 404 on an endpoint that does not exist.
 
   Keys are a method (or `*` for any) and the route pattern your router
   matched; `{id}` and `:id` are the same. The same `sampling` block can live
-  in `.restless/settings.json`, and the code option wins per route. A request
-  on a `SampleOff` route, or a success on a `SampleErrors` route, sends
-  nothing and gets no `x-request-id` header. An invalid value never fails
+  in `.restless/settings.json`, and the code option wins per route. If two
+  keys in `Routes` name the same route (`"GET /pets/:id"` and
+  `"get /pets/{id}"`), a Go map has no order to settle it, so the key that
+  sorts later byte-wise wins; in the settings file the later key wins. A
+  request on a `SampleOff` route, or a success on a `SampleErrors` route,
+  sends nothing and gets no id or debug headers. An invalid value never fails
   `New`: it falls back to `SampleOn` and says so under `DEBUG=restless`.
 
 ## Never breaks your API

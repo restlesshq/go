@@ -52,8 +52,8 @@ func WithRedact(r RedactOptions) Option { return func(c *config) { c.redact = r 
 // WithSampling sends less for high-traffic endpoints. Each endpoint is
 // SampleOn (the default: everything in full), SampleOff (nothing),
 // SampleErrors (only status >= 400), or SampleRate(r): that fraction of
-// successful requests in full and the rest without bodies. Errors are never
-// sampled.
+// successful requests in full and the rest without bodies. Errors are
+// always sent in full, except under SampleOff.
 //
 //	restless.WithSampling(restless.Sampling{
 //	    Routes: map[string]restless.SamplingMode{
@@ -64,8 +64,10 @@ func WithRedact(r RedactOptions) Option { return func(c *config) { c.redact = r 
 //	})
 //
 // Merged with `sampling` in .restless/settings.json; this option wins per
-// route, and a Default set here replaces the file's. An invalid value never
-// fails construction: it falls back to SampleOn, reported under
+// route, and a Default set here replaces the file's. Two Routes keys that
+// normalize to the same route ("GET /pets/:id", "get /pets/{id}") are
+// applied in sorted byte order, so the later one wins. An invalid value
+// never fails construction: it falls back to SampleOn, reported under
 // DEBUG=restless.
 func WithSampling(s Sampling) Option { return func(c *config) { c.sampling = &s } }
 

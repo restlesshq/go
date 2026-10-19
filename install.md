@@ -181,10 +181,11 @@ client := restless.MustNew(os.Getenv("RESTLESS_KEY"),
 Rules an installer should know:
 
 - Keys are `"<METHOD> <route pattern>"`, with `*` for any method. Use the pattern the router matched (`/pets/{id}` or `/pets/:id`, both work), never a concrete URL like `/pets/42`. `HEAD` does not fall back to `GET`.
-- The match uses the same route pattern as everything else (§4). On a router without a resolver, every request has no pattern and gets `Default`, so a route key silently never matches.
-- `Default` set in code replaces the settings file's; `Routes` merge by key, code winning.
+- The match uses the same route pattern as everything else (§4). On a router other than `ServeMux` with no resolver passed, every request has no pattern and gets `Default`, so a route key silently never matches.
+- `Default` set in code replaces the settings file's; `Routes` merge by key, code winning. Within one source, two keys naming the same route (`"GET /pets/:id"` and `"get /pets/{id}"`) resolve to one: in the settings file the later key wins, and in `Routes`, a Go map with no order, the key that sorts later byte-wise wins. Write each route once.
 - Only suggest `SampleOff` or `SampleErrors` for endpoints the user agrees are noise (health checks, readiness probes, polling). Never sample auth or payment endpoints without asking.
-- A request that sends nothing also gets no `x-request-id` header, so do not use an off route to verify the install.
+- A request that sends nothing also gets no id header (`x-request-id` or `x-restless-id`) and no debug headers, so do not use an off route to verify the install.
+- The setup callback runs before the handler, so it still runs for requests that end up dropped. Keep it cheap.
 - A panicking handler counts as an error, so only `SampleOff` drops it.
 
 ## 8. Redaction, request IDs, batching
