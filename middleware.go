@@ -208,6 +208,7 @@ type responseRecorder struct {
 	status      int
 	wroteHeader bool
 	streaming   bool
+	spilled     bool
 	buf         bytes.Buffer
 	overflow    bool
 	finished    bool
@@ -218,9 +219,31 @@ type responseRecorder struct {
 
 // passthrough reports whether the response goes straight to the client. A
 // success or a stream has no BODY to inject, so there is no reason to hold
-// it; a buffered 4xx/5xx is written in finish.
+// it, and neither has a 4xx/5xx that outgrew the capture limit (spill); any
+// other 4xx/5xx is held and written in finish.
 func (rec *responseRecorder) passthrough() bool {
-	return rec.status < 400 || rec.streaming
+	return rec.status < 400 || rec.streaming || rec.spilled
+}
+
+// spill stops holding a 4xx/5xx that has grown past maxCaptureBytes. Its
+// body is recorded without one (SAFETY-007), so there is nothing to inject
+// into: commit the header block, debug headers included as for a stream, and
+// write what was held. Every later Write passes straight through. Without
+// this the bytes past the limit were silently discarded and the client got a
+// truncated body.
+func (rec *responseRecorder) spill() error {
+	rec.spilled = true
+	if rec.outcome != SamplingDrop {
+		for name, value := range DebugHeaders(
+			rec.rawID, rec.engine.RequestIDPrefix(), rec.engine.PortalURL()) {
+			rec.ResponseWriter.Header().Set(name, value)
+		}
+	}
+	rec.ResponseWriter.WriteHeader(rec.status)
+	held := rec.buf.Bytes()
+	rec.buf = bytes.Buffer{}
+	_, err := rec.ResponseWriter.Write(held)
+	return err
 }
 
 // resolveRoute asks the route resolver again, now that the router has
@@ -315,10 +338,13 @@ func (rec *responseRecorder) Write(p []byte) (int, error) {
 	// Held back for possible rewriting.
 	if !rec.overflow && rec.buf.Len()+len(p) <= maxCaptureBytes {
 		rec.buf.Write(p)
-	} else {
-		rec.overflow = true
+		return len(p), nil
 	}
-	return len(p), nil
+	rec.overflow = true
+	if err := rec.spill(); err != nil {
+		return 0, err
+	}
+	return rec.ResponseWriter.Write(p)
 }
 
 // Flush implements http.Flusher so streaming handlers keep working.
@@ -389,8 +415,8 @@ func (rec *responseRecorder) finish(
 			rec.status, rec.rawID, rec.engine.RequestIDPrefix(),
 			recovery, rec.method, rec.route, rec.engine.PortalURL())
 
-		// A stream committed its headers, debug ones included, in
-		// WriteHeader and wrote its body as it went, so there is nothing
+		// A stream (or a spilled error) committed its headers, debug ones
+		// included, and wrote its body as it went, so there is nothing
 		// left to inject or write: only the record below.
 		if !rec.passthrough() {
 			rec.writeInjected(injection, rawBody, resHeaders["content-type"], &outBody)

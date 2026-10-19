@@ -406,3 +406,53 @@ func TestRouteResolverNormalizesServeMuxPattern(t *testing.T) {
 		t.Errorf("routePattern = %v, want /pets/{id}", got)
 	}
 }
+
+// SAFETY-007 and SAFETY-001. A 4xx/5xx is held so its body can be rewritten,
+// but one past the capture limit cannot be, and it must still reach the
+// client whole: it is recorded without a body, never truncated on the wire.
+func TestLargeErrorBodyIsNotTruncated(t *testing.T) {
+	big := strings.Repeat("x", 2*1024*1024+17)
+	for _, tc := range []struct {
+		name     string
+		sampling restless.Sampling
+		uploads  int
+	}{
+		{"no sampling", restless.Sampling{}, 1},
+		{"dropped", restless.Sampling{Default: restless.SampleOff}, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			in := &ingest{reply: `{}`}
+			client, _ := newSamplingClient(t, in, tc.sampling, 0.5)
+			mux := http.NewServeMux()
+			mux.HandleFunc("GET /big", func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("content-type", "application/json")
+				w.WriteHeader(500)
+				for i := 0; i < len(big); i += 4096 {
+					_, _ = w.Write([]byte(big[i:min(i+4096, len(big))]))
+				}
+			})
+			srv := httptest.NewServer(client.Middleware()(mux))
+			defer srv.Close()
+
+			res := do(t, srv, "GET", "/big", "")
+			if res.status != 500 || res.body != big {
+				t.Fatalf("got %d with %d bytes, want 500 with %d", res.status, len(res.body), len(big))
+			}
+			hasDebug := res.headers.Get("x-debug") != ""
+			if hasDebug != (tc.uploads == 1) {
+				t.Errorf("x-debug present = %v", hasDebug)
+			}
+			client.Flush()
+			entries := in.entries()
+			if len(entries) != tc.uploads {
+				t.Fatalf("uploaded %d entries, want %d", len(entries), tc.uploads)
+			}
+			if tc.uploads == 1 {
+				content := harOf(entries[0])["response"].(map[string]any)["content"].(map[string]any)
+				if text, ok := content["text"]; ok && text != "" {
+					t.Errorf("oversized body was recorded (%d bytes)", len(text.(string)))
+				}
+			}
+		})
+	}
+}

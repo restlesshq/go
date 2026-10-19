@@ -128,7 +128,8 @@ apart from a 404 on an endpoint that does not exist.
 Observability must not take down a production request path. Panics in the
 setup callback, in `Enrich`, and inside the SDK are all recovered; upload
 failures are swallowed (surfaced only under `DEBUG=restless`). Uploads run on
-their own goroutine and never block a response.
+their own goroutine and never block a response. A body over 1 MiB is logged
+without its body rather than buffered, and still reaches the client whole.
 
 ## Environment variables
 
