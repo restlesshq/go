@@ -1,8 +1,11 @@
 package restless
 
 import (
+	"bytes"
 	"encoding/json"
+	"math/rand/v2"
 	"net/http"
+	"sync"
 	"time"
 )
 
@@ -62,6 +65,32 @@ type Engine struct {
 	portalURL string
 	portalMu  chan struct{} // 1-buffered, used as a lightweight mutex
 	baseURL   string
+
+	// Only set for a non-default config (SAMPLE-041). Without one, Sample
+	// is a constant SamplingFull and nothing about sampling touches the
+	// wire.
+	sampling       *SamplingConfig
+	samplingReport []byte
+	random         func() float64
+	reportMu       sync.Mutex
+	reportState    reportState
+}
+
+type reportState uint8
+
+const (
+	reportUnsent reportState = iota
+	reportInflight
+	reportSent
+)
+
+// samplingReportBody is the POST /v1/sampling payload (SAMPLE-050). Field
+// order is the struct's; encoding/json sorts the route keys by bytes.
+type samplingReportBody struct {
+	Hash    string                  `json:"hash"`
+	Default SamplingMode            `json:"default"`
+	Routes  map[string]SamplingMode `json:"routes"`
+	Creator wireCreator             `json:"creator"`
 }
 
 func NewEngine(apiKey, baseURL, requestIDPrefix string, redact RedactOptions, transport Transport) *Engine {
@@ -73,6 +102,7 @@ func NewEngine(apiKey, baseURL, requestIDPrefix string, redact RedactOptions, tr
 		requestIDPrefix: requestIDPrefix,
 		baseURL:         baseURL,
 		portalMu:        make(chan struct{}, 1),
+		random:          rand.Float64,
 	}
 	e.portalMu <- struct{}{}
 	e.Uploader = NewUploader(apiKey, baseURL, requestIDPrefix, transport, e.handleServerResponse)
@@ -80,6 +110,86 @@ func NewEngine(apiKey, baseURL, requestIDPrefix string, redact RedactOptions, tr
 }
 
 func (e *Engine) SetCallback(cb SetupFunc) { e.callback = cb }
+
+// configureSampling installs a merged config. Called once, before the
+// client is handed out, so no request can race it. The default config
+// installs nothing (SAMPLE-041).
+func (e *Engine) configureSampling(cfg SamplingConfig) {
+	hash := cfg.Hash()
+	if hash == "" {
+		return
+	}
+	routes := make(map[string]SamplingMode, len(cfg.routes))
+	for k, v := range cfg.routes {
+		routes[k] = v
+	}
+	body, err := marshalCompact(samplingReportBody{
+		Hash:    hash,
+		Default: cfg.def,
+		Routes:  routes,
+		Creator: wireCreator{Name: SDKName, Version: SDKVersion},
+	})
+	if err != nil {
+		// Unreachable for a normalized config, and sampling must never be
+		// the reason capture stops: run without it.
+		debugLog("sampling disabled, cannot encode its report: %v", err)
+		return
+	}
+	e.sampling = &cfg
+	e.samplingReport = body
+	e.Uploader.samplingHash = hash
+}
+
+// SamplingEnabled reports whether a non-default sampling config is in
+// effect. Without one, Sample always answers SamplingFull.
+func (e *Engine) SamplingEnabled() bool { return e.sampling != nil }
+
+// Sample is the sampling outcome for one request (SAMPLE-030). The
+// middleware calls it exactly once, when the status is final and before any
+// SDK header goes out (SAMPLE-032), and acts on the answer: SamplingDrop
+// means no id header, no injection and no Record; SamplingStub means Record
+// with Sampled set.
+//
+// Never panics. Anything unexpected sends the request in full (SAMPLE-035):
+// sampling may only ever remove data, never break capture.
+func (e *Engine) Sample(method, route string, status int) (outcome SamplingOutcome) {
+	if e.sampling == nil {
+		return SamplingFull
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			debugLog("sampling decision panicked: %v", r)
+			outcome = SamplingFull
+		}
+	}()
+	e.reportSampling(false)
+	return DecideSampling(e.sampling.Mode(method, route), status, e.random())
+}
+
+// reportSampling tells the ingest which config produced this process's
+// uploads, so an "off" endpoint does not read as a dead one
+// (SAMPLE-050..053). Once per process on the first decision; again only when
+// the server asks, and never while a report is already in flight.
+func (e *Engine) reportSampling(resend bool) {
+	if e.sampling == nil {
+		return
+	}
+	e.reportMu.Lock()
+	if e.reportState == reportInflight || (e.reportState == reportSent && !resend) {
+		e.reportMu.Unlock()
+		return
+	}
+	e.reportState = reportInflight
+	e.reportMu.Unlock()
+
+	// Fire and forget, never retried (SAMPLE-051): the x-restless-sampling
+	// header on the next upload is how the server asks again.
+	e.Uploader.SendSamplingReport(e.samplingReport, func() {
+		e.reportMu.Lock()
+		e.reportState = reportSent
+		e.reportMu.Unlock()
+	})
+}
 
 func (e *Engine) BaseURL() string         { return e.baseURL }
 func (e *Engine) RequestIDPrefix() string { return e.requestIDPrefix }
@@ -110,9 +220,16 @@ func (e *Engine) handleServerResponse(body []byte, batchFingerprints []string) {
 		// The wire key stays docsUrl: every already-deployed SDK reads it, so
 		// renaming would strand them all with no portal origin (WIRE-023).
 		DocsURL string `json:"docsUrl"`
+		// Raw, so a value of the wrong type cannot fail the whole decode
+		// and take the other channels with it. Only a literal true counts.
+		NeedsSamplingConfig json.RawMessage `json:"needsSamplingConfig"`
 	}
 	if err := json.Unmarshal(body, &parsed); err != nil {
 		return // non-JSON is fine
+	}
+
+	if bytes.Equal(parsed.NeedsSamplingConfig, []byte("true")) { // WIRE-025
+		e.reportSampling(true)
 	}
 
 	for _, key := range parsed.NeedsEnrichment { // CACHE-006
@@ -247,6 +364,14 @@ func (e *Engine) Record(c CapturedRequest) {
 			debugLog("record panicked: %v", r)
 		}
 	}()
+
+	// SAMPLE-034. A stub ships as if no body had been captured. Dropping
+	// them here, before redaction, skips the parse work for exactly the
+	// requests the customer asked to send less of.
+	if c.Sampled {
+		c.RequestBody = nil
+		c.ResponseBody = nil
+	}
 
 	c.URL = RedactURL(c.URL, e.redact.QueryParams)
 	c.RequestHeaders = RedactHeaders(c.RequestHeaders, e.redact.Headers)

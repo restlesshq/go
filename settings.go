@@ -22,6 +22,10 @@ type APIEntry struct {
 	Name            string          `json:"name"`
 	RequestIDPrefix string          `json:"requestIdPrefix"`
 	Redact          *RedactSettings `json:"redact"`
+	// Sampling is kept raw: route key order is observable (SAMPLE-013) and
+	// an invalid value must degrade rather than fail the whole file
+	// (SAMPLE-014), so it is decoded and validated by the sampling code.
+	Sampling json.RawMessage `json:"sampling"`
 }
 
 type Settings struct {

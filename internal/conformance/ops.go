@@ -296,3 +296,101 @@ func opHarEntry(in map[string]any) (any, error) {
 	})
 	return entry, nil
 }
+
+// DispatchJSON runs one operation on its raw JSON input.
+//
+// The sampling ops need the raw text: SAMPLE-013 makes the ORDER of route
+// keys observable, and decoding into map[string]any has already lost it.
+// Every other op goes through Dispatch unchanged.
+func DispatchJSON(op string, input json.RawMessage) (any, error) {
+	var in map[string]any
+	if len(input) > 0 {
+		if err := json.Unmarshal(input, &in); err != nil {
+			return nil, err
+		}
+	}
+	if strings.HasPrefix(op, "sampling") {
+		return dispatchSampling(op, input, in)
+	}
+	return Dispatch(op, in)
+}
+
+// SurrogateSafe reports whether an op's result cannot depend on how a lone
+// surrogate escape decodes, so the driver need not refuse such a line.
+//
+// The sampling ops qualify: every string they read is either a route key, a
+// path or a mode, and each is valid only if it is printable ASCII
+// (SAMPLE-001, SAMPLE-010). An unpaired surrogate, and the U+FFFD Go decodes
+// it to, are both non-ASCII, so either way the value is rejected and the
+// output is the same. Refusing them would only cost fuzz coverage, since the
+// fuzz key generator oversamples exactly those characters.
+func SurrogateSafe(op string) bool { return strings.HasPrefix(op, "sampling") }
+
+func dispatchSampling(op string, input json.RawMessage, in map[string]any) (any, error) {
+	var raw map[string]json.RawMessage
+	if len(input) > 0 {
+		if err := json.Unmarshal(input, &raw); err != nil {
+			return nil, err
+		}
+	}
+	cfg, _ := restless.NormalizeSamplingJSON(raw["settings"], raw["code"])
+
+	switch op {
+	case "samplingConfig":
+		// Sorted [key, mode] pairs, so the comparison pins the normalized
+		// keys without depending on object key order.
+		routes := []any{}
+		for _, key := range cfg.RouteKeys() {
+			mode, _ := cfg.Route(key)
+			routes = append(routes, []any{key, modeOut(mode)})
+		}
+		return map[string]any{"default": modeOut(cfg.Default()), "routes": routes}, nil
+
+	case "samplingMode":
+		return modeOut(cfg.Mode(str(in, "method"), str(in, "route"))), nil
+
+	case "samplingDecide":
+		var u float64
+		if v, ok := in["u"].(float64); ok {
+			u = v
+		}
+		var status int
+		if v, ok := in["status"].(float64); ok {
+			status = int(v)
+		}
+		return string(restless.DecideSampling(modeIn(in["mode"]), status, u)), nil
+
+	case "samplingHash":
+		canonical, ok := cfg.Canonical()
+		if !ok {
+			return map[string]any{"canonical": nil, "hash": nil}, nil
+		}
+		return map[string]any{"canonical": canonical, "hash": cfg.Hash()}, nil
+	}
+	return nil, fmt.Errorf("unknown op: %s", op)
+}
+
+// modeOut is the protocol's Mode: a string, or a number for a rate.
+func modeOut(m restless.SamplingMode) any {
+	if r, ok := m.Rate(); ok {
+		return r
+	}
+	return m.String()
+}
+
+// modeIn takes a Mode as the reference's decide() sees it: the rate is NOT
+// quantized, and anything unrecognized decides like "on".
+func modeIn(v any) restless.SamplingMode {
+	switch m := v.(type) {
+	case string:
+		switch m {
+		case "off":
+			return restless.SampleOff
+		case "errors":
+			return restless.SampleErrors
+		}
+	case float64:
+		return restless.SampleRate(m)
+	}
+	return restless.SampleOn
+}

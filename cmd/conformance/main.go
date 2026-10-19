@@ -23,7 +23,7 @@ import (
 type request struct {
 	ID    json.RawMessage `json:"id"`
 	Op    string          `json:"op"`
-	Input map[string]any  `json:"input"`
+	Input json.RawMessage `json:"input"`
 }
 
 func main() {
@@ -41,26 +41,24 @@ func main() {
 		}
 
 		var out map[string]any
-		if conformance.HasLoneSurrogateEscape(line) {
+		var req request
+		if err := json.Unmarshal([]byte(line), &req); err != nil {
+			out = map[string]any{"id": idOf(line), "error": err.Error()}
+		} else if conformance.HasLoneSurrogateEscape(line) && !conformance.SurrogateSafe(req.Op) {
 			// Checked on the RAW LINE, because this is a TRANSPORT limit
 			// rather than an SDK one: encoding/json replaces an unpaired
 			// surrogate with U+FFFD while decoding, so by the time any op
 			// runs the input is already gone. A Go string is UTF-8 and has
 			// no encoding for one; Rust has the same constraint (PRIM-035).
 			out = map[string]any{
-				"id": idOf(line),
+				"id": req.ID,
 				"error": "unsupported: input line contains an unpaired surrogate " +
 					"escape, which a UTF-8-native string cannot represent (PRIM-035)",
 			}
+		} else if result, err := conformance.DispatchJSON(req.Op, req.Input); err != nil {
+			out = map[string]any{"id": req.ID, "error": err.Error()}
 		} else {
-			var req request
-			if err := json.Unmarshal([]byte(line), &req); err != nil {
-				out = map[string]any{"id": nil, "error": err.Error()}
-			} else if result, err := conformance.Dispatch(req.Op, req.Input); err != nil {
-				out = map[string]any{"id": req.ID, "error": err.Error()}
-			} else {
-				out = map[string]any{"id": req.ID, "result": result}
-			}
+			out = map[string]any{"id": req.ID, "result": result}
 		}
 
 		emit(writer, out)

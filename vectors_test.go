@@ -24,13 +24,13 @@ import (
 )
 
 type vectorCase struct {
-	ID          string         `json:"id"`
-	Requirement string         `json:"requirement"`
-	Op          string         `json:"op"`
-	Input       map[string]any `json:"input"`
-	Expected    any            `json:"expected"`
-	Compare     string         `json:"compare"`
-	Note        string         `json:"note"`
+	ID          string          `json:"id"`
+	Requirement string          `json:"requirement"`
+	Op          string          `json:"op"`
+	Input       json.RawMessage `json:"input"`
+	Expected    any             `json:"expected"`
+	Compare     string          `json:"compare"`
+	Note        string          `json:"note"`
 
 	// outOfDialect marks a case this implementation's language cannot
 	// represent. Set at load time from the raw JSON, not from Input.
@@ -78,7 +78,8 @@ func loadVectors(t *testing.T) []vectorCase {
 			// case struct exists the input is already gone (PRIM-035).
 			// Without this the in-process replay would silently compare a
 			// mangled input against the reference's intact one.
-			c.outOfDialect = conformance.HasLoneSurrogateEscape(string(raw))
+			c.outOfDialect = conformance.HasLoneSurrogateEscape(string(raw)) &&
+				!conformance.SurrogateSafe(c.Op)
 			all = append(all, c)
 		}
 	}
@@ -97,7 +98,7 @@ func TestConformanceVectors(t *testing.T) {
 			skipped++
 			continue
 		}
-		got, err := conformance.Dispatch(c.Op, c.Input)
+		got, err := conformance.DispatchJSON(c.Op, c.Input)
 		if err != nil {
 			// FP-046 / PRIM-035: cases outside this implementation's dialect.
 			// Covered natively in stack_test.go and documented in

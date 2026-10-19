@@ -96,13 +96,43 @@ apart from a 404 on an endpoint that does not exist.
   you already attached keeps being injected.
 - **Blocking.** Return a `Block` from the setup callback to reject a request
   before your handler runs.
+- **Sampling.** Send less for noisy endpoints without losing your counts.
+  Each endpoint is `SampleOn` (the default), `SampleOff`, `SampleErrors`
+  (only status >= 400), or a rate such as `SampleRate(0.1)`: that fraction
+  of successful requests is logged in full and the rest without bodies, so
+  counts, latency and per-customer usage stay exact. Errors are always
+  logged in full, except on a `SampleOff` route.
+
+  ```go
+  client := restless.MustNew(os.Getenv("RESTLESS_KEY"),
+      restless.WithSampling(restless.Sampling{
+          Default: restless.SampleOn,
+          Routes: map[string]restless.SamplingMode{
+              "GET /health":  restless.SampleOff,
+              "GET /status":  restless.SampleErrors,
+              "GET /pets":    restless.SampleRate(0.1),
+              "* /pets/{id}": restless.SampleRate(0.5),
+          },
+      }))
+  ```
+
+  Keys are a method (or `*` for any) and the route pattern your router
+  matched; `{id}` and `:id` are the same. The same `sampling` block can live
+  in `.restless/settings.json`, and the code option wins per route. If two
+  keys in `Routes` name the same route (`"GET /pets/:id"` and
+  `"get /pets/{id}"`), a Go map has no order to settle it, so the key that
+  sorts later byte-wise wins; in the settings file the later key wins. A
+  request on a `SampleOff` route, or a success on a `SampleErrors` route,
+  sends nothing and gets no id or debug headers. An invalid value never fails
+  `New`: it falls back to `SampleOn` and says so under `DEBUG=restless`.
 
 ## Never breaks your API
 
 Observability must not take down a production request path. Panics in the
 setup callback, in `Enrich`, and inside the SDK are all recovered; upload
 failures are swallowed (surfaced only under `DEBUG=restless`). Uploads run on
-their own goroutine and never block a response.
+their own goroutine and never block a response. A body over 1 MiB is logged
+without its body rather than buffered, and still reaches the client whole.
 
 ## Environment variables
 
@@ -114,7 +144,7 @@ their own goroutine and never block a response.
 
 ## Conformance
 
-Implements version 1.0.0 of the Restless SDK Contract at level L2, verified
+Implements version 1.1.0 of the Restless SDK Contract at level L2, verified
 against the shared cross-language conformance vectors. See
 [CONFORMANCE.md](./CONFORMANCE.md).
 

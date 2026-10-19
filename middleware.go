@@ -101,8 +101,9 @@ func (c *Client) Middleware(resolvers ...RouteResolver) func(http.Handler) http.
 			startedAt := NowISO()
 			start := time.Now()
 
-			for name, value := range RequestIDResponseHeaders(
-				rawID, reqHeaders, engine.RequestIDPrefix(), engine.HasAPIKey()) {
+			idHeaders := RequestIDResponseHeaders(
+				rawID, reqHeaders, engine.RequestIDPrefix(), engine.HasAPIKey())
+			for name, value := range idHeaders {
 				w.Header().Set(name, value)
 			}
 
@@ -113,6 +114,9 @@ func (c *Client) Middleware(resolvers ...RouteResolver) func(http.Handler) http.
 				method:         r.Method,
 				route:          info.Route,
 				status:         200,
+				req:            r,
+				resolve:        resolve,
+				idHeaders:      idHeaders,
 			}
 
 			// SAFETY-001. A panic in the handler is the single most valuable
@@ -132,11 +136,19 @@ func (c *Client) Middleware(resolvers ...RouteResolver) func(http.Handler) http.
 				}
 				if p := recover(); p != nil {
 					stack := string(debug.Stack())
+					// SAMPLE-030: a request that threw with no response
+					// counts as an error, so only "off" drops it. A handler
+					// that wrote a status before panicking was decided then,
+					// and that one decision stands (SAMPLE-032).
+					outcome := rec.decide(500)
+					if outcome == SamplingDrop {
+						panic(p)
+					}
 					// The router matched before the handler ran and panicked,
 					// so the pattern is available now even though it was not
 					// before dispatch.
 					route := info.Route
-					if after := resolve(r); after != "" {
+					if after := rec.resolveRoute(); after != "" {
 						route = after
 					}
 					engine.Record(CapturedRequest{
@@ -153,6 +165,7 @@ func (c *Client) Middleware(resolvers ...RouteResolver) func(http.Handler) http.
 						ResponseHeaders:    map[string]string{"content-type": "text/plain"},
 						StackTrace:         stack,
 						User:               &UserContext{APIKey: setup.APIKey, Owner: setup.Owner},
+						Sampled:            outcome == SamplingStub,
 					})
 					panic(p)
 				}
@@ -170,7 +183,7 @@ func (c *Client) Middleware(resolvers ...RouteResolver) func(http.Handler) http.
 			// The pre-dispatch value is still passed to the setup callback,
 			// which necessarily runs first; it is populated only when the
 			// middleware is registered per-route rather than around the mux.
-			if after := resolve(r); after != "" {
+			if after := rec.resolveRoute(); after != "" {
 				rec.route = after
 			}
 
@@ -188,12 +201,94 @@ type responseRecorder struct {
 	method string
 	route  string
 
+	req       *http.Request
+	resolve   RouteResolver
+	idHeaders map[string]string
+
 	status      int
 	wroteHeader bool
 	streaming   bool
+	spilled     bool
 	buf         bytes.Buffer
 	overflow    bool
 	finished    bool
+
+	decided bool
+	outcome SamplingOutcome
+}
+
+// passthrough reports whether the response goes straight to the client. A
+// success or a stream has no BODY to inject, so there is no reason to hold
+// it, and neither has a 4xx/5xx that outgrew the capture limit (spill); any
+// other 4xx/5xx is held and written in finish.
+func (rec *responseRecorder) passthrough() bool {
+	return rec.status < 400 || rec.streaming || rec.spilled
+}
+
+// spill stops holding a 4xx/5xx that has grown past maxCaptureBytes. Its
+// body is recorded without one (SAFETY-007), so there is nothing to inject
+// into: commit the header block, debug headers included as for a stream, and
+// write what was held. Every later Write passes straight through. Without
+// this the bytes past the limit were silently discarded and the client got a
+// truncated body.
+func (rec *responseRecorder) spill() error {
+	rec.spilled = true
+	if rec.outcome != SamplingDrop {
+		for name, value := range DebugHeaders(
+			rec.rawID, rec.engine.RequestIDPrefix(), rec.engine.PortalURL()) {
+			rec.ResponseWriter.Header().Set(name, value)
+		}
+	}
+	rec.ResponseWriter.WriteHeader(rec.status)
+	held := rec.buf.Bytes()
+	rec.buf = bytes.Buffer{}
+	_, err := rec.ResponseWriter.Write(held)
+	return err
+}
+
+// resolveRoute asks the route resolver again, now that the router has
+// matched. A resolver is user code, so a panic in it is contained and the
+// route stays as it was.
+func (rec *responseRecorder) resolveRoute() (route string) {
+	defer func() {
+		if r := recover(); r != nil {
+			debugLog("route resolver panicked: %v", r)
+			route = ""
+		}
+	}()
+	return rec.resolve(rec.req)
+}
+
+// decide makes this request's one sampling decision (SAMPLE-032), at the
+// first moment the status is final: WriteHeader, a first Write or Flush, the
+// end of a handler that wrote nothing, or a panic. Later calls return the
+// same answer, so u is never drawn twice.
+//
+// On SamplingDrop the id header set before the handler ran is taken back
+// while the header block is still unsent (SAMPLE-033). It is removed only if
+// it still holds our value, so a handler that set its own is left alone.
+func (rec *responseRecorder) decide(status int) SamplingOutcome {
+	if rec.decided {
+		return rec.outcome
+	}
+	rec.decided = true
+	rec.outcome = SamplingFull
+	if !rec.engine.SamplingEnabled() {
+		return rec.outcome
+	}
+	if route := rec.resolveRoute(); route != "" {
+		rec.route = route
+	}
+	rec.outcome = rec.engine.Sample(rec.method, rec.route, status)
+	if rec.outcome == SamplingDrop {
+		header := rec.ResponseWriter.Header()
+		for name, value := range rec.idHeaders {
+			if header.Get(name) == value {
+				header.Del(name)
+			}
+		}
+	}
+	return rec.outcome
 }
 
 func (rec *responseRecorder) WriteHeader(status int) {
@@ -208,14 +303,16 @@ func (rec *responseRecorder) WriteHeader(status int) {
 			rec.streaming = true
 		}
 	}
-	// A success or a stream is passed straight through: there is no BODY to
-	// inject, so there is no reason to hold the response.
-	if rec.status < 400 || rec.streaming {
+	outcome := rec.decide(status)
+	if rec.passthrough() {
 		// INJECT-002. The headers ship on every status, and this is the last
-		// moment before the header block is committed to the client.
-		for name, value := range DebugHeaders(
-			rec.rawID, rec.engine.RequestIDPrefix(), rec.engine.PortalURL()) {
-			rec.ResponseWriter.Header().Set(name, value)
+		// moment before the header block is committed to the client. A
+		// dropped request gets none: there is no log for them to point at.
+		if outcome != SamplingDrop {
+			for name, value := range DebugHeaders(
+				rec.rawID, rec.engine.RequestIDPrefix(), rec.engine.PortalURL()) {
+				rec.ResponseWriter.Header().Set(name, value)
+			}
 		}
 		rec.ResponseWriter.WriteHeader(status)
 	}
@@ -225,7 +322,12 @@ func (rec *responseRecorder) Write(p []byte) (int, error) {
 	if !rec.wroteHeader {
 		rec.WriteHeader(http.StatusOK)
 	}
-	if rec.status < 400 || rec.streaming {
+	if rec.passthrough() {
+		// A stub ships without bodies and a drop ships nothing, so neither
+		// is worth copying.
+		if rec.outcome != SamplingFull {
+			return rec.ResponseWriter.Write(p)
+		}
 		if !rec.overflow && rec.buf.Len()+len(p) <= maxCaptureBytes {
 			rec.buf.Write(p)
 		} else {
@@ -236,14 +338,28 @@ func (rec *responseRecorder) Write(p []byte) (int, error) {
 	// Held back for possible rewriting.
 	if !rec.overflow && rec.buf.Len()+len(p) <= maxCaptureBytes {
 		rec.buf.Write(p)
-	} else {
-		rec.overflow = true
+		return len(p), nil
 	}
-	return len(p), nil
+	rec.overflow = true
+	if err := rec.spill(); err != nil {
+		return 0, err
+	}
+	return rec.ResponseWriter.Write(p)
 }
 
 // Flush implements http.Flusher so streaming handlers keep working.
+//
+// A Flush before any write commits the header block, so it goes through
+// WriteHeader first: otherwise the status would go out without the SDK's
+// headers and without a sampling decision. A buffered 4xx/5xx is not
+// flushed, since its headers and body are only final in finish.
 func (rec *responseRecorder) Flush() {
+	if !rec.wroteHeader {
+		rec.WriteHeader(http.StatusOK)
+	}
+	if !rec.passthrough() {
+		return
+	}
 	if f, ok := rec.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	}
@@ -257,6 +373,16 @@ func (rec *responseRecorder) finish(
 	rec.finished = true
 	if !rec.wroteHeader {
 		rec.WriteHeader(http.StatusOK)
+	}
+
+	if rec.outcome == SamplingDrop {
+		// SAMPLE-033. Nothing injected and nothing recorded; a held error
+		// still has to reach the client exactly as the handler wrote it.
+		if !rec.passthrough() {
+			rec.ResponseWriter.WriteHeader(rec.status)
+			_, _ = rec.ResponseWriter.Write(rec.buf.Bytes())
+		}
+		return
 	}
 
 	resHeaders, resOrder := headerMap(rec.Header())
@@ -289,26 +415,14 @@ func (rec *responseRecorder) finish(
 			rec.status, rec.rawID, rec.engine.RequestIDPrefix(),
 			recovery, rec.method, rec.route, rec.engine.PortalURL())
 
-		for name, value := range injection.Headers {
-			rec.ResponseWriter.Header().Set(name, value)
+		// A stream (or a spilled error) committed its headers, debug ones
+		// included, and wrote its body as it went, so there is nothing
+		// left to inject or write: only the record below.
+		if !rec.passthrough() {
+			rec.writeInjected(injection, rawBody, resHeaders["content-type"], &outBody)
+			// Re-read: the injection added headers after the first snapshot.
+			resHeaders, resOrder = headerMap(rec.Header())
 		}
-		if rawBody != nil {
-			modified := ApplyInternalBodyMods(
-				*rawBody, resHeaders["content-type"], injection.Mutate)
-			if modified != *rawBody {
-				// INJECT-008. Otherwise the client truncates mid-JSON.
-				rec.ResponseWriter.Header().Set("content-length", strconv.Itoa(len(modified)))
-				outBody = &modified
-			}
-		}
-		rec.ResponseWriter.WriteHeader(rec.status)
-		if outBody != nil {
-			_, _ = io.WriteString(rec.ResponseWriter, *outBody)
-		} else {
-			_, _ = rec.ResponseWriter.Write(rec.buf.Bytes())
-		}
-		// Re-read: the injection added headers after the first snapshot.
-		resHeaders, resOrder = headerMap(rec.Header())
 	}
 
 	rec.engine.Record(CapturedRequest{
@@ -327,7 +441,32 @@ func (rec *responseRecorder) finish(
 		ResponseBody:        outBody,
 		User:                &UserContext{APIKey: setup.APIKey, Owner: setup.Owner},
 		ErrorFingerprint:    fingerprint,
+		Sampled:             rec.outcome == SamplingStub,
 	})
+}
+
+// writeInjected writes a held 4xx/5xx with the debug injection layered on
+// (INJECT-001..008), and points *outBody at what actually went out.
+func (rec *responseRecorder) writeInjected(
+	injection DebugInjection, rawBody *string, contentType string, outBody **string,
+) {
+	for name, value := range injection.Headers {
+		rec.ResponseWriter.Header().Set(name, value)
+	}
+	if rawBody != nil {
+		modified := ApplyInternalBodyMods(*rawBody, contentType, injection.Mutate)
+		if modified != *rawBody {
+			// INJECT-008. Otherwise the client truncates mid-JSON.
+			rec.ResponseWriter.Header().Set("content-length", strconv.Itoa(len(modified)))
+			*outBody = &modified
+		}
+	}
+	rec.ResponseWriter.WriteHeader(rec.status)
+	if *outBody != nil {
+		_, _ = io.WriteString(rec.ResponseWriter, **outBody)
+	} else {
+		_, _ = rec.ResponseWriter.Write(rec.buf.Bytes())
+	}
 }
 
 // headerMap flattens http.Header, preserving a deterministic order.

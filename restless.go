@@ -15,11 +15,12 @@
 //	})
 //	http.ListenAndServe(":8080", client.Middleware()(mux))
 //
-// Conformance: implements version 1.0.0 of the Restless SDK Contract at
+// Conformance: implements version 1.1.0 of the Restless SDK Contract at
 // level L2. Run the shared harness against ./cmd/conformance to verify.
 package restless
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 )
@@ -37,6 +38,7 @@ type config struct {
 	redact    RedactOptions
 	baseURL   string
 	transport Transport
+	sampling  *Sampling
 }
 
 // WithAPI names the API to use from .restless/settings.json. Required when
@@ -46,6 +48,28 @@ func WithAPI(name string) Option { return func(c *config) { c.api = name } }
 // WithRedact extends the built-in denylists. Additive only: the defaults
 // are always applied (REDACT-014).
 func WithRedact(r RedactOptions) Option { return func(c *config) { c.redact = r } }
+
+// WithSampling sends less for high-traffic endpoints. Each endpoint is
+// SampleOn (the default: everything in full), SampleOff (nothing),
+// SampleErrors (only status >= 400), or SampleRate(r): that fraction of
+// successful requests in full and the rest without bodies. Errors are
+// always sent in full, except under SampleOff.
+//
+//	restless.WithSampling(restless.Sampling{
+//	    Routes: map[string]restless.SamplingMode{
+//	        "GET /health":  restless.SampleOff,
+//	        "GET /pets":    restless.SampleRate(0.1),
+//	        "* /pets/{id}": restless.SampleErrors,
+//	    },
+//	})
+//
+// Merged with `sampling` in .restless/settings.json; this option wins per
+// route, and a Default set here replaces the file's. Two Routes keys that
+// normalize to the same route ("GET /pets/:id", "get /pets/{id}") are
+// applied in sorted byte order, so the later one wins. An invalid value
+// never fails construction: it falls back to SampleOn, reported under
+// DEBUG=restless.
+func WithSampling(s Sampling) Option { return func(c *config) { c.sampling = &s } }
 
 // WithBaseURL overrides the ingest URL.
 func WithBaseURL(url string) Option { return func(c *config) { c.baseURL = url } }
@@ -84,10 +108,17 @@ func New(apiKey string, opts ...Option) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
+	return newClient(resolved, entry, cfg), nil
+}
 
+// newClient builds the client from a resolved key and settings entry. Split
+// from New so tests can supply the entry without a settings file on disk.
+func newClient(resolved string, entry *APIEntry, cfg *config) *Client {
 	requestIDPrefix := ""
 	redact := cfg.redact
+	var settingsSampling json.RawMessage
 	if entry != nil {
+		settingsSampling = entry.Sampling
 		requestIDPrefix = entry.RequestIDPrefix
 		if entry.Redact != nil {
 			// REDACT-015. Settings and options are BOTH additive on top of
@@ -98,9 +129,22 @@ func New(apiKey string, opts ...Option) (*Client, error) {
 		}
 	}
 
-	return &Client{engine: NewEngine(
-		resolved, ResolveBaseURL(cfg.baseURL), requestIDPrefix, redact, cfg.transport,
-	)}, nil
+	// SAMPLE-014. Code wins over the settings file, per route. A bad value
+	// never fails construction: it falls back to "on" and says so under
+	// DEBUG.
+	settingsSource, warning := parseSamplingJSON("settings", settingsSampling)
+	if warning != "" {
+		debugLog("%s", warning)
+	}
+	sampling, warnings := normalizeSampling(settingsSource, cfg.sampling.toSource())
+	for _, w := range warnings {
+		debugLog("%s", w)
+	}
+
+	engine := NewEngine(
+		resolved, ResolveBaseURL(cfg.baseURL), requestIDPrefix, redact, cfg.transport)
+	engine.configureSampling(sampling)
+	return &Client{engine: engine}
 }
 
 // MustNew is New, panicking on a configuration error. Appropriate at
