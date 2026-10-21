@@ -163,7 +163,7 @@ func TestSamplingOffDropsEverything(t *testing.T) {
 
 	for _, path := range []string{"/health", "/pets/1", "/pets/missing", "/stream", "/silent"} {
 		res := do(t, srv, "GET", path, "")
-		for _, h := range []string{"x-request-id", "x-restless-id", "x-debug", "x-log-url"} {
+		for _, h := range []string{"x-request-id", "x-restless-id", "x-debug", "x-api-feedback", "x-log-url"} {
 			if v := res.headers.Get(h); v != "" {
 				t.Errorf("GET %s: %s = %q on a dropped request (SAMPLE-033)", path, h, v)
 			}
@@ -191,11 +191,13 @@ func TestSamplingErrorsMode(t *testing.T) {
 	defer srv.Close()
 
 	ok := do(t, srv, "GET", "/pets/1", "")
-	if ok.headers.Get("x-request-id") != "" || ok.headers.Get("x-debug") != "" {
+	if ok.headers.Get("x-request-id") != "" || ok.headers.Get("x-debug") != "" ||
+		ok.headers.Get("x-api-feedback") != "" {
 		t.Errorf("a success under \"errors\" kept its headers: %v", ok.headers)
 	}
 	miss := do(t, srv, "GET", "/pets/missing", "")
-	if miss.headers.Get("x-request-id") == "" || miss.headers.Get("x-debug") == "" {
+	if miss.headers.Get("x-request-id") == "" || miss.headers.Get("x-debug") == "" ||
+		miss.headers.Get("x-api-feedback") == "" {
 		t.Errorf("an error under \"errors\" lost its headers: %v", miss.headers)
 	}
 
