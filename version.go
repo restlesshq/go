@@ -8,7 +8,7 @@ const (
 	// SDKName is distinct per implementation (WIRE-016), so the ingest can
 	// attribute a payload to a language.
 	SDKName    = "restless-sdk-go"
-	SDKVersion = "0.2.0"
+	SDKVersion = "0.3.0"
 
 	// SpecVersion is the spec/CONTRACT.md version this SDK is verified
 	// against.
