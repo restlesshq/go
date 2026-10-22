@@ -6,6 +6,7 @@ package restless_test
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -199,13 +200,18 @@ func TestInjectionAndRecoveryRoundTrip(t *testing.T) {
 	}
 
 	// INJECT-006. The portal origin is learned from an upload RESPONSE, so
-	// nothing has one yet. Emit x-debug alone rather than a URL that 404s.
+	// nothing has one yet. Emit the two CLI headers alone rather than a URL
+	// that 404s.
 	coldResp, cold := get("/pets/99")
 	if got := coldResp.Header.Get("x-log-url"); got != "" {
 		t.Errorf("x-log-url before the first round-trip: %q", got)
 	}
 	if coldResp.Header.Get("x-debug") == "" {
 		t.Error("x-debug should survive a missing portal origin (INJECT-002)")
+	}
+	if !strings.HasPrefix(coldResp.Header.Get("x-api-feedback"), "npx api feedback ") {
+		t.Errorf("x-api-feedback should survive a missing portal origin (INJECT-006): %q",
+			coldResp.Header.Get("x-api-feedback"))
 	}
 	if _, ok := cold["debug"]; ok {
 		t.Error("no portal origin means no debug object at all (INJECT-006)")
@@ -220,6 +226,11 @@ func TestInjectionAndRecoveryRoundTrip(t *testing.T) {
 	// The ingest base URL is an upload target, never a log-URL host.
 	if strings.Contains(warmResp.Header.Get("x-log-url"), "ingress.example") {
 		t.Errorf("x-log-url built on the ingest origin: %q", warmResp.Header.Get("x-log-url"))
+	}
+	// Both CLI headers name the same display id (INJECT-002).
+	id := strings.TrimPrefix(warmResp.Header.Get("x-debug"), "npx api debug ")
+	if got := warmResp.Header.Get("x-api-feedback"); got != "npx api feedback "+id {
+		t.Errorf("x-api-feedback = %q on a 4xx, want the x-debug id %q", got, id)
 	}
 	debug := warm["debug"].(map[string]any)
 	if !strings.HasPrefix(debug["log"].(string), "https://docs.acme.test/") {
@@ -275,8 +286,45 @@ func TestInjectionHeadersOn2xxWithoutTouchingBody(t *testing.T) {
 	if resp.Header.Get("x-debug") == "" {
 		t.Error("no x-debug on a 2xx")
 	}
+	if !strings.HasPrefix(resp.Header.Get("x-api-feedback"), "npx api feedback ") {
+		t.Errorf("no x-api-feedback on a 2xx: %q", resp.Header.Get("x-api-feedback"))
+	}
 	if _, ok := out["debug"]; ok {
 		t.Error("a successful body is the caller's data; it must not be reshaped")
+	}
+}
+
+// INJECT-002 on a response whose header block is committed before the handler
+// returns: the debug headers have to be set at that moment, not at the end.
+func TestInjectionHeadersOnStreamedResponse(t *testing.T) {
+	client, _ := newTestClient(t, `{}`)
+	client.Setup(func(r *restless.RequestInfo) restless.SetupResult { return restless.SetupResult{} })
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /events", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("content-type", "text/event-stream")
+		_, _ = w.Write([]byte("data: 1\n\n"))
+		w.(http.Flusher).Flush()
+		_, _ = w.Write([]byte("data: 2\n\n"))
+	})
+	srv := httptest.NewServer(client.Middleware()(mux))
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/events")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if string(body) != "data: 1\n\ndata: 2\n\n" {
+		t.Errorf("stream body = %q", body)
+	}
+	id := strings.TrimPrefix(resp.Header.Get("x-debug"), "npx api debug ")
+	if id == "" || id == resp.Header.Get("x-debug") {
+		t.Fatalf("no x-debug on a streamed response: %q", resp.Header.Get("x-debug"))
+	}
+	if got := resp.Header.Get("x-api-feedback"); got != "npx api feedback "+id {
+		t.Errorf("x-api-feedback = %q on a streamed response, want id %q", got, id)
 	}
 }
 

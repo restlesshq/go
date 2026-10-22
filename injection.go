@@ -43,28 +43,33 @@ type DebugInjection struct {
 	Mutate func(body any) any
 }
 
-// BuildDebugInjection assembles the debug headers, and on a 4xx/5xx the body
-// mutation as well (INJECT-001..006).
-//
-// portalURL is the project's public portal origin, published by the server.
-// It is NOT the ingest base URL, which serves /v1/* and would 404 both paths,
-// and there is deliberately no fallback to it: with no portal origin we emit
-// x-debug alone. A caller cannot tell a broken URL from a missing one, and one
-// fetched 404 teaches an agent to stop following the link (INJECT-006).
 // DebugHeaders are the debug response headers (INJECT-002). They ship on every
 // status, so an adapter must be able to set them before it commits a 2xx
 // header block, without knowing anything else about the response.
 //
-// x-log-url is omitted with no portal origin; x-debug carries no URL, so it
-// always ships.
+// x-log-url is omitted with no portal origin. x-debug and x-api-feedback carry
+// no URL, so they always ship, both naming the same display id.
 func DebugHeaders(requestID, prefix, portalURL string) map[string]string {
-	out := map[string]string{"x-debug": "npx api debug " + FormatRequestID(requestID, prefix)}
+	display := FormatRequestID(requestID, prefix)
+	out := map[string]string{
+		"x-debug":        "npx api debug " + display,
+		"x-api-feedback": "npx api feedback " + display,
+	}
 	if portalURL != "" {
 		out["x-log-url"] = portalURL + "/logs/" + requestID
 	}
 	return out
 }
 
+// BuildDebugInjection assembles the debug headers, and on a 4xx/5xx the body
+// mutation as well (INJECT-001..006).
+//
+// portalURL is the project's public portal origin, published by the server.
+// It is NOT the ingest base URL, which serves /v1/* and would 404 both paths,
+// and there is deliberately no fallback to it: with no portal origin we emit
+// the two CLI headers alone. A caller cannot tell a broken URL from a
+// missing one, and one fetched 404 teaches an agent to stop following the
+// link (INJECT-006).
 func BuildDebugInjection(status int, requestID, prefix, recovery, method, path, portalURL string) DebugInjection {
 	headers := DebugHeaders(requestID, prefix, portalURL)
 

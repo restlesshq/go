@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Spec version** | 1.1.0 |
+| **Spec version** | 1.2.0 |
 | **Level** | L2 (core + batching, caches, injection, safety) |
 | **Reference** | `restlesshq/node` (`@restlessai/sdk`) |
 | **Driver** | `go run ./cmd/conformance` |
