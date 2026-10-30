@@ -441,14 +441,20 @@ func TestSamplingReportOncePerProcess(t *testing.T) {
 }
 
 func TestSamplingReportResentOnRequest(t *testing.T) {
-	in := &ingest{reply: `{"needsSamplingConfig":true}`}
+	in := &ingest{reply: `{}`}
 	client, _ := newSamplingClient(t, in, restless.Sampling{Default: restless.SampleRate(0.5)}, 0)
 	srv := petsServer(client)
 	defer srv.Close()
 
+	// Setup mode uploads at once, racing the first report, and SAMPLE-053 skips a
+	// resend while that report is in flight. So let it land before asking again.
 	do(t, srv, "GET", "/pets", "")
 	client.Flush()
-	client.Flush() // the resend is started from the upload's goroutine
+	in.mu.Lock()
+	in.reply = `{"needsSamplingConfig":true}`
+	in.mu.Unlock()
+	do(t, srv, "GET", "/pets", "")
+	client.Flush()
 	if n := len(in.byPath("/v1/sampling")); n != 2 {
 		t.Errorf("sent %d reports, want the first and one resend (SAMPLE-053)", n)
 	}
