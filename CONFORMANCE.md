@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Spec version** | 1.2.0 |
+| **Spec version** | 1.3.0 |
 | **Level** | L2 (core + batching, caches, injection, safety) |
 | **Reference** | `restlesshq/node` (`@restlessai/sdk`) |
 | **Driver** | `go run ./cmd/conformance` |
@@ -68,6 +68,9 @@ the reference. They are the reason this SDK is byte-compatible.
 | SAMPLE-002 | The rate is quantized as `math.Floor(float64(r*10000) + 0.5)`. The Go spec lets the compiler fuse `x*y+z` into one FMA instruction (arm64 does), which skips rounding the product; the explicit conversion forces the two roundings JavaScript performs. A search around every half step found no rate in [0, 1] where fusion moves the result, so this is insurance, not a known divergence. |
 | SAMPLE-013 | Route key ORDER decides which of two keys normalizing to the same one wins. `encoding/json` into a map has already lost it, so the settings file's `sampling` is kept as `json.RawMessage` and decoded with the order-preserving parser in `orderedjson.go`, and the driver hands the sampling ops their raw input for the same reason. `WithSampling` takes a Go map, which has no order at all: its keys are taken in sorted byte order, so the later key in byte order wins. That is deterministic, which map iteration is not. |
 | SAMPLE-032 | `net/http` commits the status at `WriteHeader`, a first `Write`, or a `Flush`, so the recorder decides at the first of those (or at the end of a handler that wrote nothing, or at a panic) and takes the id header back there on a drop. `Flush` before any write goes through `WriteHeader`, and a held 4xx/5xx is not flushed early. |
+| BATCH-009 | The in-flight count lives under the uploader's mutex, so taking a slot and splitting a batch off the queue are one step; a freed slot wakes `Flush` through a `sync.Cond`. A goroutine sleeping before a WIRE-026 retry keeps its slot. |
+| WIRE-026 | Only the default transport reports a status the uploader can retry on; a custom `WithTransport` func returning an error gets no retry unless the error is a dial failure. "Never reached the ingest" is any `net.OpError` with `Op == "dial"` or a `net.DNSError`, minus timeouts. That is slightly wider than Node's three error codes (it includes host and network unreachable), and still nothing was sent. |
+| WIRE-028 | A `context.WithTimeout` per attempt, so each retry gets its own 10 s and the deadline also covers reading the response body. The deadline error is a timeout, so it is never retried. |
 | CACHE-* | Every cache is mutex-guarded. Go serves requests on many goroutines, so an unsynchronized map is not a theoretical race - the runtime aborts the process. |
 
 ## Exemption: PRIM-034 (unpaired surrogates)

@@ -139,6 +139,16 @@ failures are swallowed (surfaced only under `DEBUG=restless`). Uploads run on
 their own goroutine and never block a response. A body over 1 MiB is logged
 without its body rather than buffered, and still reaches the client whole.
 
+A slow or overloaded ingest cannot pile up work in your process: at most 4
+uploads run at once, each gives up after 10 seconds, and captures wait in a
+queue capped at 1000 entries (oldest dropped first). When a slot frees, the
+next upload takes up to 100 queued entries, so a backlog drains instead of
+being shed. An upload the ingest refuses with `503` or `429` is retried at
+most twice, honouring `Retry-After` (capped at 10 seconds), and so is one
+that never connected. Anything the ingest may already have stored (other
+errors, `502`/`504`, timeouts, a connection dropped mid-upload) is not
+retried, because a resend would duplicate it.
+
 ## Environment variables
 
 | variable | purpose |
@@ -149,7 +159,7 @@ without its body rather than buffered, and still reaches the client whole.
 
 ## Conformance
 
-Implements version 1.1.0 of the Restless SDK Contract at level L2, verified
+Implements version 1.3.0 of the Restless SDK Contract at level L2, verified
 against the shared cross-language conformance vectors. See
 [CONFORMANCE.md](./CONFORMANCE.md).
 

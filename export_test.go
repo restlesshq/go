@@ -1,5 +1,7 @@
 package restless
 
+import "time"
+
 // Test-only hooks. Compiled into the package only under `go test`.
 
 // SetSamplingRand replaces the draw of u (SAMPLE-031) so a test can pick
@@ -14,4 +16,11 @@ func NewWithEntry(apiKey string, entry *APIEntry, opts ...Option) *Client {
 		opt(cfg)
 	}
 	return newClient(apiKey, entry, cfg)
+}
+
+// SetUploadTiming shortens the upload timeout (WIRE-028) and the retry
+// backoff base (WIRE-026) so a test does not wait seconds.
+func SetUploadTiming(u *Uploader, timeout, retryBase time.Duration) {
+	u.timeout = timeout
+	u.retryBase = retryBase
 }

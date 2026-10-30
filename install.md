@@ -49,7 +49,7 @@ log.Fatal(http.ListenAndServe(":8080", client.Middleware()(mux)))
 | `Setup(fn)` | Register the per-request callback. |
 | `Mask(key)` | Hash an end-user API key. Also available as the package function `restless.Mask`. |
 | `Middleware(resolvers ...RouteResolver)` | The `func(http.Handler) http.Handler` to wrap with. |
-| `Flush()` | Force-upload the current batch, e.g. before exit. |
+| `Flush()` | Upload everything queued and wait for it, retries included, e.g. before exit. |
 
 `MustNew` panics on a configuration error; `New` returns `(*Client, error)`. Both take functional options after the key: `WithAPI`, `WithBaseURL`, `WithRedact`, `WithSampling` (§7a), `WithTransport`.
 
@@ -198,7 +198,8 @@ Rules an installer should know:
 - Every status gets these headers: `x-log-url: <portalOrigin>/logs/<id>`, `x-debug: npx api debug <id>` and `x-api-feedback: npx api feedback <id>` (the command that files feedback against that exact request). Status **>= 400** also gets a `debug` block in a JSON body. A request sampling drops (§7a) gets none of them, and no id header.
 - `x-log-url` points at your project's public docs host, which the server tells the SDK on each upload. Until the first upload round-trips, it is omitted rather than guessed: a URL that 404s is worse than no URL. The ingest host is never used for it. `x-debug` and `x-api-feedback` carry no URL, so they are present from the very first response.
 - Browser callers only see these headers if the API lists them in `Access-Control-Expose-Headers` (for example `x-log-url, x-debug, x-api-feedback`); same-origin and server-side callers see them without it.
-- Batching is fixed: 10 per batch, 5000 ms flush, 1000-entry queue dropping oldest, immediate flush against localhost. Uploads run on their own goroutine and never block a response.
+- Batching is fixed: 10 per batch, 5000 ms flush, 1000-entry queue dropping oldest, immediate flush against localhost or outside production. Uploads run on their own goroutine and never block a response.
+- At most 4 uploads are in flight; when one finishes with a backlog queued, the next carries up to 100 entries. Each upload times out after 10 s. A `503` or `429` is retried up to twice (after `Retry-After`, else a jittered backoff from 1 s, never more than 10 s), as is a connection that was refused or failed DNS. Other failures, including `502`, `504`, timeouts and a connection lost mid-upload, are dropped rather than retried, since the ingest may have stored them.
 - **Panics in your handler** are logged with their stack and then re-panicked, so `net/http`'s own handling is unchanged.
 
 **Test runs do not upload.** Detected via `RESTLESS_ENV=test`, a binary named `*.test`, or `-test.*` flags - so `go test` never hits production ingest. Capture still runs.
