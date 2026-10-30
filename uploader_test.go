@@ -280,6 +280,25 @@ func TestUploadRetriesAConnectionThatNeverReachedTheIngest(t *testing.T) {
 	}
 }
 
+func TestUploadRetriesAStatusErrorFromACustomTransport(t *testing.T) {
+	var calls atomic.Int32
+	transport := func(string, []byte, map[string]string) ([]byte, error) {
+		switch calls.Add(1) {
+		case 1:
+			return nil, &restless.StatusError{Status: 503, RetryAfter: "0"}
+		case 2:
+			return nil, &restless.StatusError{Status: 502}
+		}
+		return []byte(`{}`), nil
+	}
+	u := newUploader(t, "http://localhost:3003", transport)
+	u.Push(captured("a"))
+	u.Flush()
+	if n := calls.Load(); n != 2 {
+		t.Errorf("got %d attempts, want 2 (503 retried, then 502 dropped)", n)
+	}
+}
+
 func TestUploadPanicNeverReachesTheHost(t *testing.T) {
 	var calls atomic.Int32
 	u := newUploader(t, "http://localhost:3003", func(string, []byte, map[string]string) ([]byte, error) {

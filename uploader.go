@@ -107,19 +107,19 @@ func shouldFlushImmediately(baseURL string) bool {
 	return isLocalhost(baseURL)
 }
 
-// Transport lets tests swap the HTTP call. Returns the response body. Only
-// the default transport reports the statuses WIRE-026 retries.
+// Transport lets tests swap the HTTP call. Returns the response body on a 2xx;
+// return a *StatusError for anything else so 503 and 429 are retried (WIRE-026).
 type Transport func(url string, body []byte, headers map[string]string) ([]byte, error)
 
-// statusError is a non-2xx upload response. Only 503 and 429 are retried.
-type statusError struct {
-	status     int
-	retryAfter string
-	body       string
+// StatusError is a non-2xx upload response. Only 503 and 429 are retried.
+type StatusError struct {
+	Status     int
+	RetryAfter string // the raw Retry-After header, if any
+	Body       string
 }
 
-func (e *statusError) Error() string {
-	return fmt.Sprintf("upload failed: %d %s", e.status, truncateForLog(e.body))
+func (e *StatusError) Error() string {
+	return fmt.Sprintf("upload failed: %d %s", e.Status, truncateForLog(e.Body))
 }
 
 type Uploader struct {
@@ -357,12 +357,12 @@ func (u *Uploader) send(batch []CapturedRequest) {
 // retryWait reports whether err may be retried (WIRE-026) and how long to
 // wait first. Everything else is dropped (WIRE-024, WIRE-027).
 func (u *Uploader) retryWait(err error, retry int) (time.Duration, bool) {
-	var se *statusError
+	var se *StatusError
 	if errors.As(err, &se) {
-		if se.status != http.StatusServiceUnavailable && se.status != http.StatusTooManyRequests {
+		if se.Status != http.StatusServiceUnavailable && se.Status != http.StatusTooManyRequests {
 			return 0, false
 		}
-		return retryDelay(se.retryAfter, retry, u.retryBase), true
+		return retryDelay(se.RetryAfter, retry, u.retryBase), true
 	}
 	if notSent(err) {
 		return retryDelay("", retry, u.retryBase), true
@@ -469,10 +469,10 @@ func (u *Uploader) post(url string, body []byte, headers map[string]string) ([]b
 		return nil, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, &statusError{
-			status:     resp.StatusCode,
-			retryAfter: resp.Header.Get("Retry-After"),
-			body:       string(buf),
+		return nil, &StatusError{
+			Status:     resp.StatusCode,
+			RetryAfter: resp.Header.Get("Retry-After"),
+			Body:       string(buf),
 		}
 	}
 	return buf, nil

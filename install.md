@@ -51,7 +51,7 @@ log.Fatal(http.ListenAndServe(":8080", client.Middleware()(mux)))
 | `Middleware(resolvers ...RouteResolver)` | The `func(http.Handler) http.Handler` to wrap with. |
 | `Flush()` | Upload everything queued and wait for it, retries included, e.g. before exit. |
 
-`MustNew` panics on a configuration error; `New` returns `(*Client, error)`. Both take functional options after the key: `WithAPI`, `WithBaseURL`, `WithRedact`, `WithSampling` (§7a), `WithTransport`.
+`MustNew` panics on a configuration error; `New` returns `(*Client, error)`. Both take functional options after the key: `WithAPI`, `WithBaseURL`, `WithRedact`, `WithSampling` (§7a), `WithTransport` (a test hook: return the body on a 2xx, else a `*restless.StatusError` so a `503` or `429` is retried).
 
 **Wrap as far out as you can**, above any middleware that can reject a request, so the SDK still records the 401 it produced.
 
