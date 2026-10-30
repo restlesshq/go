@@ -2,12 +2,20 @@ package restless
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"math"
+	"math/rand/v2"
+	"net"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -19,10 +27,16 @@ import (
 // request path (SAFETY-004).
 
 const (
-	DefaultBaseURL = "https://ingress.restless.ai" // WIRE-005
-	batchSize      = 10                            // BATCH-001
-	flushInterval  = 5 * time.Second               // BATCH-002
-	maxQueue       = 1000                          // BATCH-004
+	DefaultBaseURL   = "https://ingress.restless.ai" // WIRE-005
+	batchSize        = 10                            // BATCH-001
+	flushInterval    = 5 * time.Second               // BATCH-002
+	maxQueue         = 1000                          // BATCH-004
+	maxInFlight      = 4                             // BATCH-009
+	maxUploadEntries = 100                           // BATCH-010
+	uploadTimeout    = 10 * time.Second              // WIRE-028
+	maxRetries       = 2                             // WIRE-026
+	retryBase        = time.Second                   // WIRE-026
+	maxRetryDelay    = 10 * time.Second              // WIRE-026
 )
 
 // CONFIG-004
@@ -93,8 +107,20 @@ func shouldFlushImmediately(baseURL string) bool {
 	return isLocalhost(baseURL)
 }
 
-// Transport lets tests swap the HTTP call. Returns the response body.
+// Transport lets tests swap the HTTP call. Returns the response body on a 2xx;
+// return a *StatusError for anything else so 503 and 429 are retried (WIRE-026).
 type Transport func(url string, body []byte, headers map[string]string) ([]byte, error)
+
+// StatusError is a non-2xx upload response. Only 503 and 429 are retried.
+type StatusError struct {
+	Status     int
+	RetryAfter string // the raw Retry-After header, if any
+	Body       string
+}
+
+func (e *StatusError) Error() string {
+	return fmt.Sprintf("upload failed: %d %s", e.Status, truncateForLog(e.Body))
+}
 
 type Uploader struct {
 	apiKey          string
@@ -107,22 +133,31 @@ type Uploader struct {
 	// header is sent at all.
 	samplingHash string
 
-	mu    sync.Mutex
-	queue []CapturedRequest
-	timer *time.Timer
-	wg    sync.WaitGroup
+	// Fields rather than constants so tests can shorten the waits.
+	timeout   time.Duration
+	retryBase time.Duration
+
+	mu       sync.Mutex
+	queue    []CapturedRequest
+	timer    *time.Timer
+	inFlight int        // BATCH-009, counting an upload waiting to retry
+	settled  *sync.Cond // broadcast on mu whenever an upload finishes
+	wg       sync.WaitGroup
 }
 
 func NewUploader(apiKey, baseURL, requestIDPrefix string, transport Transport, onResponse func([]byte, []string)) *Uploader {
-	if transport == nil {
-		transport = httpPost
-	}
 	u := &Uploader{
 		apiKey:          apiKey,
 		baseURL:         strings.TrimRight(baseURL, "/"),
 		requestIDPrefix: requestIDPrefix,
 		transport:       transport,
 		onResponse:      onResponse,
+		timeout:         uploadTimeout,
+		retryBase:       retryBase,
+	}
+	u.settled = sync.NewCond(&u.mu)
+	if u.transport == nil {
+		u.transport = u.post
 	}
 	u.warnIfInsecure()
 	return u
@@ -148,6 +183,7 @@ func (u *Uploader) Push(captured CapturedRequest) {
 	}
 
 	u.mu.Lock()
+	defer u.mu.Unlock()
 	// BATCH-004. Drop the OLDEST: the newest entries are the ones an
 	// operator is actively debugging.
 	if len(u.queue) >= maxQueue {
@@ -155,48 +191,112 @@ func (u *Uploader) Push(captured CapturedRequest) {
 		debugLog("queue at %d - dropping oldest captured request", maxQueue)
 	}
 	u.queue = append(u.queue, captured)
-	flushNow := shouldFlushImmediately(u.baseURL) || len(u.queue) >= batchSize
-	if !flushNow && u.timer == nil {
-		u.timer = time.AfterFunc(flushInterval, func() { u.flushAsync() })
-	}
-	u.mu.Unlock()
 
-	if flushNow {
-		u.flushAsync()
+	switch {
+	case shouldFlushImmediately(u.baseURL):
+		u.pumpLocked(true)
+	case len(u.queue) >= batchSize:
+		u.pumpLocked(false)
+	case u.timer == nil:
+		u.startTimerLocked()
 	}
 }
 
-// SAFETY-008. Uploads never block the request path.
-func (u *Uploader) flushAsync() {
-	u.wg.Add(1)
-	go func() {
-		defer u.wg.Done()
-		u.Flush()
-	}()
+func (u *Uploader) startTimerLocked() {
+	var t *time.Timer
+	t = time.AfterFunc(flushInterval, func() {
+		u.mu.Lock()
+		defer u.mu.Unlock()
+		// A Flush may have replaced or stopped this timer while it was firing.
+		if u.timer == t {
+			u.timer = nil
+		}
+		u.pumpLocked(true)
+	})
+	u.timer = t
 }
 
-// Flush uploads the queued batch synchronously.
-func (u *Uploader) Flush() {
-	u.mu.Lock()
+func (u *Uploader) stopTimerLocked() {
 	if u.timer != nil {
 		u.timer.Stop()
 		u.timer = nil
 	}
-	if len(u.queue) == 0 {
-		u.mu.Unlock()
-		return
-	}
+}
+
+// pumpLocked starts uploads while a BATCH-009 slot is free. Without partial
+// only full batches go, and a remainder waits for the timer (BATCH-010).
+func (u *Uploader) pumpLocked(partial bool) {
 	// BATCH-007. No key means drop the batch; never retry, never accumulate.
 	if u.apiKey == "" {
-		debugLog("no API key - dropping batch")
+		if len(u.queue) > 0 {
+			debugLog("no API key - dropping batch")
+		}
 		u.queue = nil
-		u.mu.Unlock()
 		return
 	}
-	batch := u.queue
-	u.queue = nil
-	u.mu.Unlock()
+	for u.inFlight < maxInFlight && len(u.queue) > 0 && (partial || len(u.queue) >= batchSize) {
+		n := min(len(u.queue), maxUploadEntries)
+		batch := u.queue[:n:n]
+		u.queue = u.queue[n:]
+		u.inFlight++
+		u.wg.Add(1)
+		// SAFETY-008. Uploads never block the request path.
+		go u.upload(batch)
+	}
+	if len(u.queue) == 0 {
+		u.queue = nil
+	}
+}
 
+func (u *Uploader) upload(batch []CapturedRequest) {
+	defer func() {
+		// SAFETY-001. A panicking transport or response hook must not reach the host.
+		if r := recover(); r != nil {
+			debugLog("upload panicked: %v", r)
+		}
+		u.mu.Lock()
+		u.inFlight--
+		u.afterUploadLocked()
+		u.settled.Broadcast()
+		u.mu.Unlock()
+		u.wg.Done()
+	}()
+	u.send(batch)
+}
+
+// afterUploadLocked hands a freed slot to what is waiting, or makes sure a
+// remainder smaller than a batch still has a timer.
+func (u *Uploader) afterUploadLocked() {
+	if len(u.queue) == 0 {
+		return
+	}
+	immediate := shouldFlushImmediately(u.baseURL)
+	if immediate || len(u.queue) >= batchSize {
+		u.pumpLocked(immediate)
+	} else if u.timer == nil {
+		u.startTimerLocked()
+	}
+}
+
+// Flush uploads everything queued, four at a time, and returns once all of
+// it and anything already in flight has settled, retries included (BATCH-005).
+func (u *Uploader) Flush() {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	u.stopTimerLocked()
+	for len(u.queue) > 0 || u.inFlight > 0 {
+		u.pumpLocked(true)
+		if u.inFlight == 0 {
+			break // BATCH-007: no key, pump dropped the queue
+		}
+		u.settled.Wait()
+	}
+	u.stopTimerLocked()
+}
+
+// send runs one upload, holding its slot through any retries. It retries
+// only what the ingest certainly did not store (WIRE-026, WIRE-027).
+func (u *Uploader) send(batch []CapturedRequest) {
 	var fingerprints []string
 	seen := map[string]bool{}
 	for _, c := range batch {
@@ -221,8 +321,6 @@ func (u *Uploader) Flush() {
 	}
 
 	url := u.baseURL + "/v1/request" // WIRE-001
-	debugLog("uploading %d entries to %s", len(batch), url)
-
 	headers := map[string]string{
 		"Content-Type":            "application/json",   // WIRE-002
 		"Authorization":           "Bearer " + u.apiKey, // WIRE-003
@@ -231,15 +329,84 @@ func (u *Uploader) Flush() {
 	if u.samplingHash != "" {
 		headers["x-restless-sampling"] = u.samplingHash // SAMPLE-052
 	}
-	respBody, err := u.transport(url, body, headers)
-	if err != nil {
-		debugLog("upload error: %v", err)
-		return
+
+	for retry := 0; ; retry++ {
+		if retry == 0 {
+			debugLog("uploading %d entries to %s", len(batch), url)
+		} else {
+			debugLog("uploading %d entries to %s (retry %d)", len(batch), url, retry)
+		}
+		respBody, err := u.transport(url, body, headers)
+		if err == nil {
+			// WIRE-020. A non-JSON or unparseable response is ignored, not an error.
+			if len(respBody) > 0 && u.onResponse != nil {
+				u.onResponse(respBody, fingerprints)
+			}
+			return
+		}
+		wait, retryable := u.retryWait(err, retry)
+		if !retryable || retry >= maxRetries {
+			debugLog("upload error: %v", err)
+			return
+		}
+		debugLog("upload refused (%v); retrying in %s", err, wait.Round(time.Millisecond))
+		time.Sleep(wait)
 	}
-	// WIRE-020. A non-JSON or unparseable response is ignored, not an error.
-	if len(respBody) > 0 && u.onResponse != nil {
-		u.onResponse(respBody, fingerprints)
+}
+
+// retryWait reports whether err may be retried (WIRE-026) and how long to
+// wait first. Everything else is dropped (WIRE-024, WIRE-027).
+func (u *Uploader) retryWait(err error, retry int) (time.Duration, bool) {
+	var se *StatusError
+	if errors.As(err, &se) {
+		if se.Status != http.StatusServiceUnavailable && se.Status != http.StatusTooManyRequests {
+			return 0, false
+		}
+		return retryDelay(se.RetryAfter, retry, u.retryBase), true
 	}
+	if notSent(err) {
+		return retryDelay("", retry, u.retryBase), true
+	}
+	return 0, false
+}
+
+// retryDelay is the server's Retry-After (seconds or an HTTP date), else
+// jittered exponential backoff, capped either way (WIRE-026).
+func retryDelay(retryAfter string, retry int, base time.Duration) time.Duration {
+	if h := strings.TrimSpace(retryAfter); h != "" {
+		if secs, err := strconv.ParseFloat(h, 64); err == nil {
+			if !math.IsNaN(secs) && !math.IsInf(secs, 0) && secs >= 0 {
+				return time.Duration(min(secs, maxRetryDelay.Seconds()) * float64(time.Second))
+			}
+		} else if at, err := http.ParseTime(h); err == nil {
+			if d := time.Until(at); d >= 0 {
+				return min(d, maxRetryDelay)
+			}
+		}
+	}
+	backoff := float64(base) * math.Pow(2, float64(retry)) * (0.5 + rand.Float64())
+	return time.Duration(min(backoff, float64(maxRetryDelay)))
+}
+
+// notSent reports a connection failure where nothing reached the ingest, so
+// a retry cannot duplicate a stored batch. A timeout never qualifies (WIRE-028).
+func notSent(err error) bool {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+	var ne net.Error
+	if errors.As(err, &ne) && ne.Timeout() {
+		return false
+	}
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) {
+		return true
+	}
+	var opErr *net.OpError
+	if errors.As(err, &opErr) && opErr.Op == "dial" {
+		return true
+	}
+	return errors.Is(err, syscall.ECONNREFUSED)
 }
 
 // SendSamplingReport POSTs the sampling config report (SAMPLE-050) on its
@@ -278,30 +445,37 @@ func (u *Uploader) SendSamplingReport(body []byte, done func()) {
 // clean process shutdown.
 func (u *Uploader) Wait() { u.wg.Wait() }
 
-func httpPost(url string, body []byte, headers map[string]string) ([]byte, error) {
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+var uploadClient = &http.Client{}
+
+// post is the default Transport. The deadline covers the whole exchange,
+// response body included (WIRE-028).
+func (u *Uploader) post(url string, body []byte, headers map[string]string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), u.timeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := uploadClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	buf := new(bytes.Buffer)
-	if _, err := buf.ReadFrom(resp.Body); err != nil {
+	buf, err := io.ReadAll(resp.Body)
+	if err != nil {
 		return nil, err
 	}
-	// WIRE-024. Never retried, never raised.
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		debugLog("upload failed: %d %s", resp.StatusCode, truncateForLog(buf.String()))
-		return nil, nil
+		return nil, &StatusError{
+			Status:     resp.StatusCode,
+			RetryAfter: resp.Header.Get("Retry-After"),
+			Body:       string(buf),
+		}
 	}
-	return buf.Bytes(), nil
+	return buf, nil
 }
 
 func truncateForLog(s string) string {
