@@ -326,7 +326,7 @@ func TestUploadSendsTheSpecVersion(t *testing.T) {
 	u := newUploader(t, srv.URL, nil)
 	u.Push(captured("a"))
 	u.Flush()
-	if v, _ := got.Load().(string); v != "1.3.0" {
-		t.Errorf("X-Restless-Spec-Version = %q, want 1.3.0 (META-002)", v)
+	if v, _ := got.Load().(string); v != "1.4.0" {
+		t.Errorf("X-Restless-Spec-Version = %q, want 1.4.0 (META-002)", v)
 	}
 }

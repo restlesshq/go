@@ -490,14 +490,55 @@ func headerMap(h http.Header) (map[string]string, []string) {
 	return out, order
 }
 
+// RequestScheme is the scheme the client used, for the logged URL
+// (CONTRACT.md HAR-013).
+//
+// A TLS-terminating proxy (Render, Heroku, an ALB, nginx) hands the app
+// plain HTTP, so the connection alone logs every request as http://. The
+// first hop's `Forwarded: proto=` wins, then the first X-Forwarded-Proto
+// value, then the connection. Only "http" and "https" are accepted from a
+// header; anything else falls through to the next source. The headers are
+// trusted without a trusted-proxy list: a spoofed value only mislabels the
+// sender's own log entry.
+func RequestScheme(h http.Header, tls bool) string {
+	if forwarded := h.Get("Forwarded"); forwarded != "" {
+		firstHop, _, _ := strings.Cut(forwarded, ",")
+		for _, pair := range strings.Split(firstHop, ";") {
+			name, value, ok := strings.Cut(pair, "=")
+			if !ok || strings.ToLower(strings.TrimSpace(name)) != "proto" {
+				continue
+			}
+			if scheme, ok := validScheme(value); ok {
+				return scheme
+			}
+		}
+	}
+	first, _, _ := strings.Cut(h.Get("X-Forwarded-Proto"), ",")
+	if scheme, ok := validScheme(first); ok {
+		return scheme
+	}
+	if tls {
+		return "https"
+	}
+	return "http"
+}
+
+// validScheme trims, unquotes and lowercases a header-supplied scheme, and
+// accepts only http and https.
+func validScheme(raw string) (string, bool) {
+	s := strings.TrimSpace(raw)
+	if len(s) >= 2 && s[0] == '"' && s[len(s)-1] == '"' {
+		s = s[1 : len(s)-1]
+	}
+	s = strings.ToLower(s)
+	if s == "http" || s == "https" {
+		return s, true
+	}
+	return "", false
+}
+
 func fullURL(r *http.Request) string {
-	scheme := "http"
-	if r.TLS != nil {
-		scheme = "https"
-	}
-	if forwarded := r.Header.Get("x-forwarded-proto"); forwarded != "" {
-		scheme = forwarded
-	}
+	scheme := RequestScheme(r.Header, r.TLS != nil)
 	host := r.Host
 	if host == "" {
 		host = "localhost"

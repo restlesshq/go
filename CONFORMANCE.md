@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Spec version** | 1.3.0 |
+| **Spec version** | 1.4.0 |
 | **Level** | L2 (core + batching, caches, injection, safety) |
 | **Reference** | `restlesshq/node` (`@restlessai/sdk`) |
 | **Driver** | `go run ./cmd/conformance` |
@@ -32,7 +32,7 @@ node ../node/spec/harness/fuzz.mjs \
   --iterations 20000
 ```
 
-Current status: **252 vectors, 244 passed, 0 failed, 8 skipped.** Zero
+Current status: **269 vectors, 261 passed, 0 failed, 8 skipped.** Zero
 divergence across ~90,000 fuzz comparisons on five seeds (24301, 90210, 7,
 1337, 5), about a quarter of them on the sampling ops.
 

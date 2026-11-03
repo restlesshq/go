@@ -159,7 +159,7 @@ retried, because a resend would duplicate it.
 
 ## Conformance
 
-Implements version 1.3.0 of the Restless SDK Contract at level L2, verified
+Implements version 1.4.0 of the Restless SDK Contract at level L2, verified
 against the shared cross-language conformance vectors. See
 [CONFORMANCE.md](./CONFORMANCE.md).
 
