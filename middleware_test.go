@@ -504,3 +504,51 @@ func TestLargeErrorBodyIsNotTruncated(t *testing.T) {
 		})
 	}
 }
+
+// HAR-013 (RES-21): behind a TLS-terminating proxy the connection is plain
+// HTTP, so the logged scheme comes from the forwarding headers.
+func TestLoggedSchemeBehindProxy(t *testing.T) {
+	cases := []struct {
+		name    string
+		headers map[string]string
+		want    string
+	}{
+		{"x-forwarded-proto https", map[string]string{"X-Forwarded-Proto": "https"}, "https"},
+		{"x-forwarded-proto chain uses the first hop", map[string]string{"X-Forwarded-Proto": "https, http"}, "https"},
+		{"forwarded proto", map[string]string{"Forwarded": `for=192.0.2.60;proto="https"`}, "https"},
+		{"invalid x-forwarded-proto falls back", map[string]string{"X-Forwarded-Proto": "wss"}, "http"},
+		{"plain request", nil, "http"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			client, drain := newTestClient(t, `{}`)
+			client.Setup(func(r *restless.RequestInfo) restless.SetupResult { return restless.SetupResult{} })
+			mux := http.NewServeMux()
+			mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(`{}`)) })
+			srv := httptest.NewServer(client.Middleware()(mux))
+			defer srv.Close()
+
+			req, _ := http.NewRequest("GET", srv.URL+"/v1/ping?x=1", nil)
+			for k, v := range tc.headers {
+				req.Header.Set(k, v)
+			}
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			resp.Body.Close()
+
+			client.Flush()
+			entries := drain()
+			if len(entries) != 1 {
+				t.Fatalf("expected 1 upload, got %d", len(entries))
+			}
+			har := entries[0]["request"].(map[string]any)["log"].(map[string]any)["entries"].([]any)[0].(map[string]any)
+			got := har["request"].(map[string]any)["url"].(string)
+			want := tc.want + "://" + strings.TrimPrefix(srv.URL, "http://") + "/v1/ping?x=1"
+			if got != want {
+				t.Errorf("logged URL = %q, want %q", got, want)
+			}
+		})
+	}
+}

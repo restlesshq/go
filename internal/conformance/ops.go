@@ -10,6 +10,7 @@ package conformance
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 
 	restless "github.com/restlesshq/go"
@@ -128,6 +129,20 @@ func Dispatch(op string, in map[string]any) (any, error) {
 		hasKey, _ := in["hasApiKey"].(bool)
 		return restless.RequestIDResponseHeaders(
 			str(in, "ourId"), headers(in, "incomingHeaders"), str(in, "prefix"), hasKey), nil
+
+	case "requestScheme":
+		// Header names arrive in any case; Add canonicalizes them the way
+		// net/http does for a real request.
+		h := http.Header{}
+		if raw, ok := in["headers"].(map[string]any); ok {
+			for k, v := range raw {
+				if s, ok := v.(string); ok {
+					h.Add(k, s)
+				}
+			}
+		}
+		encrypted, _ := in["encrypted"].(bool)
+		return restless.RequestScheme(h, encrypted), nil
 
 	case "recoverySlug":
 		return restless.RecoverySlug(str(in, "method"), str(in, "path")), nil

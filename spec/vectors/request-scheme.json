@@ -1,0 +1,215 @@
+{
+  "$generated": "GENERATED FILE - do not edit by hand. Inputs live in spec/cases.ts; run `npm run spec:vectors` to regenerate.",
+  "$contract": "spec/CONTRACT.md",
+  "specVersion": "1.4.0",
+  "cases": [
+    {
+      "id": "scheme/plain-socket",
+      "requirement": "HAR-013",
+      "op": "requestScheme",
+      "input": {
+        "headers": {},
+        "encrypted": false
+      },
+      "expected": "http"
+    },
+    {
+      "id": "scheme/tls-socket",
+      "requirement": "HAR-013",
+      "op": "requestScheme",
+      "input": {
+        "headers": {},
+        "encrypted": true
+      },
+      "expected": "https"
+    },
+    {
+      "id": "scheme/xfp-https",
+      "requirement": "HAR-013",
+      "op": "requestScheme",
+      "input": {
+        "headers": {
+          "x-forwarded-proto": "https"
+        },
+        "encrypted": false
+      },
+      "expected": "https",
+      "note": "The RES-21 case: Render terminates TLS and forwards plain HTTP."
+    },
+    {
+      "id": "scheme/xfp-http-over-tls",
+      "requirement": "HAR-013",
+      "op": "requestScheme",
+      "input": {
+        "headers": {
+          "x-forwarded-proto": "http"
+        },
+        "encrypted": true
+      },
+      "expected": "http",
+      "note": "The header wins over the socket in both directions."
+    },
+    {
+      "id": "scheme/xfp-first-of-chain",
+      "requirement": "HAR-013",
+      "op": "requestScheme",
+      "input": {
+        "headers": {
+          "x-forwarded-proto": "https, http"
+        },
+        "encrypted": false
+      },
+      "expected": "https",
+      "note": "Two proxies: the first value is the client-facing hop."
+    },
+    {
+      "id": "scheme/xfp-case-and-space",
+      "requirement": "HAR-013",
+      "op": "requestScheme",
+      "input": {
+        "headers": {
+          "x-forwarded-proto": "  HTTPS "
+        },
+        "encrypted": false
+      },
+      "expected": "https"
+    },
+    {
+      "id": "scheme/xfp-invalid-falls-back",
+      "requirement": "HAR-013",
+      "op": "requestScheme",
+      "input": {
+        "headers": {
+          "x-forwarded-proto": "wss"
+        },
+        "encrypted": true
+      },
+      "expected": "https"
+    },
+    {
+      "id": "scheme/xfp-empty-falls-back",
+      "requirement": "HAR-013",
+      "op": "requestScheme",
+      "input": {
+        "headers": {
+          "x-forwarded-proto": ""
+        },
+        "encrypted": true
+      },
+      "expected": "https"
+    },
+    {
+      "id": "scheme/xfp-header-name-case",
+      "requirement": "HAR-013",
+      "op": "requestScheme",
+      "input": {
+        "headers": {
+          "X-Forwarded-Proto": "https"
+        },
+        "encrypted": false
+      },
+      "expected": "https"
+    },
+    {
+      "id": "scheme/forwarded-proto",
+      "requirement": "HAR-013",
+      "op": "requestScheme",
+      "input": {
+        "headers": {
+          "forwarded": "for=192.0.2.60;proto=https;by=203.0.113.43"
+        },
+        "encrypted": false
+      },
+      "expected": "https"
+    },
+    {
+      "id": "scheme/forwarded-quoted",
+      "requirement": "HAR-013",
+      "op": "requestScheme",
+      "input": {
+        "headers": {
+          "forwarded": "proto=\"https\""
+        },
+        "encrypted": false
+      },
+      "expected": "https"
+    },
+    {
+      "id": "scheme/forwarded-param-case",
+      "requirement": "HAR-013",
+      "op": "requestScheme",
+      "input": {
+        "headers": {
+          "forwarded": "Proto=HTTPS"
+        },
+        "encrypted": false
+      },
+      "expected": "https"
+    },
+    {
+      "id": "scheme/forwarded-first-element",
+      "requirement": "HAR-013",
+      "op": "requestScheme",
+      "input": {
+        "headers": {
+          "forwarded": "proto=https, proto=http"
+        },
+        "encrypted": false
+      },
+      "expected": "https"
+    },
+    {
+      "id": "scheme/forwarded-beats-xfp",
+      "requirement": "HAR-013",
+      "op": "requestScheme",
+      "input": {
+        "headers": {
+          "forwarded": "proto=https",
+          "x-forwarded-proto": "http"
+        },
+        "encrypted": false
+      },
+      "expected": "https"
+    },
+    {
+      "id": "scheme/forwarded-without-proto",
+      "requirement": "HAR-013",
+      "op": "requestScheme",
+      "input": {
+        "headers": {
+          "forwarded": "for=192.0.2.60",
+          "x-forwarded-proto": "https"
+        },
+        "encrypted": false
+      },
+      "expected": "https",
+      "note": "No proto in Forwarded: fall through to X-Forwarded-Proto."
+    },
+    {
+      "id": "scheme/forwarded-proto-only-later-hop",
+      "requirement": "HAR-013",
+      "op": "requestScheme",
+      "input": {
+        "headers": {
+          "forwarded": "for=a, proto=https"
+        },
+        "encrypted": false
+      },
+      "expected": "http",
+      "note": "Only the first element counts, so this falls through to the socket."
+    },
+    {
+      "id": "scheme/forwarded-invalid-proto",
+      "requirement": "HAR-013",
+      "op": "requestScheme",
+      "input": {
+        "headers": {
+          "forwarded": "proto=ftp",
+          "x-forwarded-proto": "https"
+        },
+        "encrypted": false
+      },
+      "expected": "https"
+    }
+  ]
+}
